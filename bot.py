@@ -25,17 +25,25 @@ SYSTEM_PROMPT = """
 В конце всегда давай 1-2 добрых совета.
 """
 
+async def send_long_message(message: Message, text: str):
+    if len(text) > 4000:
+        for i in range(0, len(text), 4000):
+            await message.answer(text[i:i+4000])
+    else:
+        await message.answer(text)
+
 @dp.message(Command("start"))
 async def start(message: Message):
     await message.answer(
         "👋 Привет! Я Аарон — хиромант.\n\n"
-        "Пришли мне чёткое фото ладони (одну или обе), и я расскажу, что они говорят о тебе ✨"
+        "Пришли мне чёткое фото ладони (одну или обе), "
+        "и я расскажу, что они говорят о тебе ✨"
     )
 
 @dp.message(F.photo)
 async def handle_photo(message: Message):
     await message.answer("✨ Анализирую твою ладонь... Подожди немного.")
-    
+
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
     file_path = f"photo_{message.from_user.id}.jpg"
@@ -55,7 +63,8 @@ async def handle_photo(message: Message):
             },
             "Опиши подробно эту ладонь. Определи активная это рука или пассивная."
         ])
-        await message.answer(response.text)
+
+        await send_long_message(message, response.text)
 
     except Exception as e:
         logging.error(f"Error: {e}")
