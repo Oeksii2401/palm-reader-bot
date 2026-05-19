@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import base64
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -34,19 +35,32 @@ async def start(message: Message):
 @dp.message(F.photo)
 async def handle_photo(message: Message):
     await message.answer("✨ Анализирую твою ладонь... Подожди немного.")
+    
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
     file_path = f"photo_{message.from_user.id}.jpg"
     await bot.download_file(file.file_path, file_path)
+
     try:
-        img = genai.upload_file(path=file_path)
+        with open(file_path, "rb") as f:
+            image_data = base64.b64encode(f.read()).decode()
+
         response = model.generate_content([
-            SYSTEM_PROMPT, img,
-            "\nОпиши подробно эту ладонь. Определи активная это рука или пассивная."
+            SYSTEM_PROMPT,
+            {
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": image_data
+                }
+            },
+            "Опиши подробно эту ладонь. Определи активная это рука или пассивная."
         ])
         await message.answer(response.text)
+
     except Exception as e:
-        await message.answer("😔 Не получилось разобрать фото. Попробуй прислать другое — лучше освещение, без бликов.")
+        logging.error(f"Error: {e}")
+        await message.answer(f"Ошибка: {str(e)[:200]}")
+
     if os.path.exists(file_path):
         os.remove(file_path)
 
