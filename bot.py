@@ -13,7 +13,7 @@ bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+model = genai.GenerativeModel('gemini-2.5-flash')
 
 SYSTEM_PROMPT = """
 Ты — опытный хиромант по имени Аарон с 25-летним опытом.
