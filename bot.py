@@ -4,7 +4,7 @@ import os
 import base64
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from datetime import datetime, timedelta
 import google.generativeai as genai
 
@@ -18,12 +18,8 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 
 user_state = {}
 
-# ─────────────────────────────────────────────
-# ТЕКСТЫ
-# ─────────────────────────────────────────────
 TEXTS = {
     "uk": {
-        "choose_lang":     "🔮 Оберіть мову / Choose language:",
         "choose_menu":     "🔮 Що бажаєте дізнатися?",
         "menu_palm":       "🖐 Хіромантія",
         "menu_num":        "🔢 Нумерологія",
@@ -31,6 +27,8 @@ TEXTS = {
         "menu_compat":     "💑 Сумісність",
         "menu_horoscope":  "🌟 Гороскоп",
         "back":            "↩️ Головне меню",
+        "exit_btn":        "🚪 Вийти",
+        "exit_msg":        "👋 До побачення! Зірки завжди з тобою ✨\n\nНапишіть /start щоб повернутися.",
         "choose_hand":     "🖐 Яку руку гадаємо?\n\n• Права — активна (теперішнє і майбутнє)\n• Ліва — пасивна (потенціал і минуле)",
         "left_btn":        "🤚 Ліва рука",
         "right_btn":       "✋ Права рука",
@@ -54,7 +52,6 @@ TEXTS = {
         "unexpected":      "Скористайтеся кнопками меню 👇",
     },
     "ru": {
-        "choose_lang":     "🔮 Выберите язык / Choose language:",
         "choose_menu":     "🔮 Что желаете узнать?",
         "menu_palm":       "🖐 Хиромантия",
         "menu_num":        "🔢 Нумерология",
@@ -62,6 +59,8 @@ TEXTS = {
         "menu_compat":     "💑 Совместимость",
         "menu_horoscope":  "🌟 Гороскоп",
         "back":            "↩️ Главное меню",
+        "exit_btn":        "🚪 Выйти",
+        "exit_msg":        "👋 До свидания! Звёзды всегда с тобой ✨\n\nНапишите /start чтобы вернуться.",
         "choose_hand":     "🖐 Какую руку читаем?\n\n• Правая — активная (настоящее и будущее)\n• Левая — пассивная (потенциал и прошлое)",
         "left_btn":        "🤚 Левая рука",
         "right_btn":       "✋ Правая рука",
@@ -85,7 +84,6 @@ TEXTS = {
         "unexpected":      "Используйте кнопки меню 👇",
     },
     "en": {
-        "choose_lang":     "🔮 Choose language / Оберіть мову:",
         "choose_menu":     "🔮 What would you like to explore?",
         "menu_palm":       "🖐 Palmistry",
         "menu_num":        "🔢 Numerology",
@@ -93,6 +91,8 @@ TEXTS = {
         "menu_compat":     "💑 Compatibility",
         "menu_horoscope":  "🌟 Horoscope",
         "back":            "↩️ Main Menu",
+        "exit_btn":        "🚪 Exit",
+        "exit_msg":        "👋 Goodbye! The stars are always with you ✨\n\nType /start to return.",
         "choose_hand":     "🖐 Which hand shall we read?\n\n• Right — active (present & future)\n• Left — passive (potential & past)",
         "left_btn":        "🤚 Left hand",
         "right_btn":       "✋ Right hand",
@@ -116,7 +116,6 @@ TEXTS = {
         "unexpected":      "Please use the menu buttons 👇",
     },
     "de": {
-        "choose_lang":     "🔮 Sprache wählen / Choose language:",
         "choose_menu":     "🔮 Was möchten Sie erkunden?",
         "menu_palm":       "🖐 Handlesen",
         "menu_num":        "🔢 Numerologie",
@@ -124,6 +123,8 @@ TEXTS = {
         "menu_compat":     "💑 Partnerschaft",
         "menu_horoscope":  "🌟 Horoskop",
         "back":            "↩️ Hauptmenü",
+        "exit_btn":        "🚪 Beenden",
+        "exit_msg":        "👋 Auf Wiedersehen! Die Sterne sind immer bei dir ✨\n\nSchreiben Sie /start um zurückzukehren.",
         "choose_hand":     "🖐 Welche Hand lesen wir?\n\n• Rechte — aktiv (Gegenwart & Zukunft)\n• Linke — passiv (Potenzial & Vergangenheit)",
         "left_btn":        "🤚 Linke Hand",
         "right_btn":       "✋ Rechte Hand",
@@ -148,44 +149,133 @@ TEXTS = {
     }
 }
 
-# ─────────────────────────────────────────────
-# ПРОМТЫ
-# ─────────────────────────────────────────────
 PALM_SYSTEM = {
-    "uk": "Ти — Аарон, майстер-хіромант із 25-річним досвідом. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. СТРУКТУРА: 1)Тип руки та загальна енергетика 2)Лінія Життя 3)Лінія Серця 4)Лінія Голови 5)Лінія Долі 6)Горби 7)Пальці 8)Загальний висновок 9)3 конкретні поради. Стиль: глибокий, серйозний, мудрий наставник з теплою усмішкою. Використовуй емодзі.",
-    "ru": "Ты — Аарон, мастер-хиромант с 25-летним опытом. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. СТРУКТУРА: 1)Тип руки и общая энергетика 2)Линия Жизни 3)Линия Сердца 4)Линия Головы 5)Линия Судьбы 6)Холмы 7)Пальцы 8)Общий вывод 9)3 конкретных совета. Стиль: глубокий, серьёзный, мудрый наставник с доброй улыбкой. Используй эмодзи.",
-    "en": "You are Aaron, a master palmist with 25 years of experience. Reply EXCLUSIVELY IN ENGLISH. STRUCTURE: 1)Hand type & energy 2)Life Line 3)Heart Line 4)Head Line 5)Fate Line 6)Mounts 7)Fingers 8)Overall conclusion 9)3 specific pieces of advice. Style: deep, serious, wise mentor with a warm smile. Use emojis.",
+    "uk": "Ти — Аарон, майстер-хіромант із 25-річним досвідом. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. СТРУКТУРА: 1)Тип руки та загальна енергетика 2)Лінія Життя 3)Лінія Серця 4)Лінія Голови 5)Лінія Долі 6)Горби 7)Пальці 8)Загальний висновок 9)3 конкретні поради. Стиль: глибокий, серйозний, мудрий наставник з теплою усмішкою. Використовуй емодзі для структури.",
+    "ru": "Ты — Аарон, мастер-хиромант с 25-летним опытом. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. СТРУКТУРА: 1)Тип руки и общая энергетика 2)Линия Жизни 3)Линия Сердца 4)Линия Головы 5)Линия Судьбы 6)Холмы 7)Пальцы 8)Общий вывод 9)3 конкретных совета. Стиль: глубокий, серьёзный, мудрый наставник с доброй улыбкой. Используй эмодзи для структуры.",
+    "en": "You are Aaron, a master palmist with 25 years of experience. Reply EXCLUSIVELY IN ENGLISH. STRUCTURE: 1)Hand type & energy 2)Life Line 3)Heart Line 4)Head Line 5)Fate Line 6)Mounts 7)Fingers 8)Overall conclusion 9)3 specific pieces of advice. Style: deep, serious, wise mentor with a warm smile. Use emojis for structure.",
     "de": "Du bist Aaron, ein Meister-Handleser mit 25 Jahren Erfahrung. Antworte AUSSCHLIESSLICH AUF DEUTSCH. STRUKTUR: 1)Handtyp & Energie 2)Lebenslinie 3)Herzlinie 4)Kopflinie 5)Schicksalslinie 6)Hügel 7)Finger 8)Gesamtschluss 9)3 konkrete Ratschläge. Stil: tiefgründig, ernsthaft, weiser Mentor mit warmem Lächeln. Verwende Emojis.",
 }
+
 PALM_PROMPTS = {
-    "uk": {"left": "ЛІВА (пасивна) рука — природжений потенціал, карма, спадковість. Що дано від народження?", "right": "ПРАВА (активна) рука — реалізація, теперішнє, майбутні можливості. Що людина зробила зі своїм потенціалом?", "both": "Перше фото ЛІВА рука, друге ПРАВА. Порівняй обидві: де реалізовано потенціал, де є резерви?"},
-    "ru": {"left": "ЛЕВАЯ (пассивная) рука — врождённый потенциал, карма, наследственность. Что дано от природы?", "right": "ПРАВАЯ (активная) рука — реализация, настоящее, будущие возможности. Что человек сделал со своим потенциалом?", "both": "Первое фото ЛЕВАЯ рука, второе ПРАВАЯ. Сравни обе: где реализован потенциал, где есть резервы?"},
-    "en": {"left": "LEFT (passive) hand — innate potential, karma, heredity. What was given by nature?", "right": "RIGHT (active) hand — realization, present, future opportunities. What has this person done with their potential?", "both": "First photo LEFT hand, second RIGHT. Compare both: where is potential fulfilled, where are there reserves?"},
-    "de": {"left": "LINKE (passive) Hand — angeborenes Potenzial, Karma, Erbschaft. Was wurde von der Natur gegeben?", "right": "RECHTE (aktive) Hand — Realisierung, Gegenwart, zukünftige Möglichkeiten. Was hat die Person mit ihrem Potenzial gemacht?", "both": "Erstes Foto LINKE Hand, zweites RECHTE. Vergleiche beide: Wo ist Potenzial erfüllt, wo gibt es Reserven?"},
+    "uk": {
+        "left":  "ЛІВА (пасивна) рука — природжений потенціал, карма, спадковість. Що дано від народження?",
+        "right": "ПРАВА (активна) рука — реалізація, теперішнє, майбутні можливості. Що людина зробила зі своїм потенціалом?",
+        "both":  "Перше фото ЛІВА рука, друге ПРАВА. Порівняй обидві: де реалізовано потенціал, де є резерви?",
+    },
+    "ru": {
+        "left":  "ЛЕВАЯ (пассивная) рука — врождённый потенциал, карма, наследственность. Что дано от природы?",
+        "right": "ПРАВАЯ (активная) рука — реализация, настоящее, будущие возможности. Что человек сделал со своим потенциалом?",
+        "both":  "Первое фото ЛЕВАЯ рука, второе ПРАВАЯ. Сравни обе: где реализован потенциал, где есть резервы?",
+    },
+    "en": {
+        "left":  "LEFT (passive) hand — innate potential, karma, heredity. What was given by nature?",
+        "right": "RIGHT (active) hand — realization, present, future opportunities. What has this person done with their potential?",
+        "both":  "First photo LEFT hand, second RIGHT. Compare both: where is potential fulfilled, where are reserves?",
+    },
+    "de": {
+        "left":  "LINKE (passive) Hand — angeborenes Potenzial, Karma, Erbschaft. Was wurde von der Natur gegeben?",
+        "right": "RECHTE (aktive) Hand — Realisierung, Gegenwart, Zukunft. Was hat die Person mit ihrem Potenzial gemacht?",
+        "both":  "Erstes Foto LINKE Hand, zweites RECHTE. Vergleiche beide: Wo ist Potenzial erfüllt, wo gibt es Reserven?",
+    },
 }
+
 NUMEROLOGY_PROMPT = {
-    "uk": "Ти — Аарон, майстер нумерології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Розрахуй: 1)Число Життєвого Шляху 2)Число Долі 3)Число Душі 4)Число Особистості 5)Особисте Число Року. Покажи всі розрахунки. Глибоке тлумачення кожного числа. 3 конкретні поради в кінці. Дані: ",
-    "ru": "Ты — Аарон, мастер нумерологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Рассчитай: 1)Число Жизненного Пути 2)Число Судьбы 3)Число Души 4)Число Личности 5)Личное Число Года. Покажи все расчёты. Глубокое толкование каждого числа. 3 конкретных совета в конце. Данные: ",
-    "en": "You are Aaron, a master numerologist. Reply EXCLUSIVELY IN ENGLISH. Calculate: 1)Life Path Number 2)Destiny Number 3)Soul Number 4)Personality Number 5)Personal Year Number. Show all calculations. Deep interpretation of each number. 3 specific recommendations at the end. Data: ",
-    "de": "Du bist Aaron, ein Meister-Numerologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Berechne: 1)Lebenspfadzahl 2)Schicksalszahl 3)Seelenzahl 4)Persönlichkeitszahl 5)Persönliche Jahreszahl. Zeige alle Berechnungen. Tiefe Interpretation jeder Zahl. 3 konkrete Empfehlungen am Ende. Daten: ",
+    "uk": "Ти — Аарон, майстер нумерології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Розрахуй та поясни: 1)🔢Число Життєвого Шляху (покажи розрахунок) 2)💫Число Долі (за таблицею Піфагора) 3)🌟Число Душі (голосні) 4)🎭Число Особистості (приголосні) 5)📅Число Дня Народження 6)🔮Особисте Число Поточного Року. Глибоке тлумачення кожного числа. 3 конкретні поради в кінці. Дані: ",
+    "ru": "Ты — Аарон, мастер нумерологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Рассчитай и объясни: 1)🔢Число Жизненного Пути (покажи расчёт) 2)💫Число Судьбы (по таблице Пифагора) 3)🌟Число Души (гласные) 4)🎭Число Личности (согласные) 5)📅Число Дня Рождения 6)🔮Личное Число Текущего Года. Глубокое толкование каждого числа. 3 конкретных совета в конце. Данные: ",
+    "en": "You are Aaron, a master numerologist. Reply EXCLUSIVELY IN ENGLISH. Calculate and explain: 1)🔢Life Path Number (show calculation) 2)💫Destiny Number (Pythagorean table) 3)🌟Soul Number (vowels) 4)🎭Personality Number (consonants) 5)📅Birth Day Number 6)🔮Personal Year Number. Deep interpretation of each number. 3 specific recommendations at end. Data: ",
+    "de": "Du bist Aaron, ein Meister-Numerologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Berechne und erkläre: 1)🔢Lebenspfadzahl (zeige Berechnung) 2)💫Schicksalszahl (Pythagoras-Tabelle) 3)🌟Seelenzahl (Vokale) 4)🎭Persönlichkeitszahl (Konsonanten) 5)📅Geburtstagszahl 6)🔮Persönliche Jahreszahl. Tiefe Interpretation jeder Zahl. 3 konkrete Empfehlungen am Ende. Daten: ",
 }
+
 NATAL_PROMPT = {
-    "uk": "Ти — Аарон, майстер астрології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Структура: 1)☀️Сонячний знак 2)🌙Місячний знак 3)⬆️Аскендент 4)🪐Ключові планети 5)🏠Важливі будинки 6)💫Сильні сторони 7)⚡Виклики 8)🌟Теми життя 9)🔮3-4 поради. Дані: ",
-    "ru": "Ты — Аарон, мастер астрологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Структура: 1)☀️Солнечный знак 2)🌙Лунный знак 3)⬆️Асцендент 4)🪐Ключевые планеты 5)🏠Важные дома 6)💫Сильные стороны 7)⚡Вызовы 8)🌟Темы жизни 9)🔮3-4 совета. Данные: ",
-    "en": "You are Aaron, a master astrologer. Reply EXCLUSIVELY IN ENGLISH. Structure: 1)☀️Sun sign 2)🌙Moon sign 3)⬆️Ascendant 4)🪐Key planets 5)🏠Important houses 6)💫Strengths 7)⚡Challenges 8)🌟Life themes 9)🔮3-4 recommendations. Data: ",
-    "de": "Du bist Aaron, ein Meister-Astrologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Struktur: 1)☀️Sonnenzeichen 2)🌙Mondzeichen 3)⬆️Aszendent 4)🪐Schlüsselplaneten 5)🏠Wichtige Häuser 6)💫Stärken 7)⚡Herausforderungen 8)🌟Lebensthemen 9)🔮3-4 Empfehlungen. Daten: ",
+    "uk": "Ти — Аарон, майстер астрології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Структура: 1)☀️Сонячний знак — ядро особистості 2)🌙Місячний знак — емоційна природа 3)⬆️Аскендент — як сприймають оточуючі 4)🪐Ключові планети та їх положення 5)🏠Найважливіші будинки 6)💫Сильні сторони карти 7)⚡Виклики та уроки 8)🌟Головні теми життя 9)🔮3-4 конкретні поради. Стиль: глибокий, мудрий, серйозний. Дані: ",
+    "ru": "Ты — Аарон, мастер астрологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Структура: 1)☀️Солнечный знак — ядро личности 2)🌙Лунный знак — эмоциональная природа 3)⬆️Асцендент — как воспринимают окружающие 4)🪐Ключевые планеты и их положения 5)🏠Важнейшие дома 6)💫Сильные стороны карты 7)⚡Вызовы и уроки 8)🌟Главные темы жизни 9)🔮3-4 конкретных совета. Стиль: глубокий, мудрый, серьёзный. Данные: ",
+    "en": "You are Aaron, a master astrologer. Reply EXCLUSIVELY IN ENGLISH. Structure: 1)☀️Sun sign — personality core 2)🌙Moon sign — emotional nature 3)⬆️Ascendant — how others perceive you 4)🪐Key planets & positions 5)🏠Most important houses 6)💫Chart strengths 7)⚡Challenges & lessons 8)🌟Main life themes 9)🔮3-4 specific recommendations. Style: deep, wise, serious. Data: ",
+    "de": "Du bist Aaron, ein Meister-Astrologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Struktur: 1)☀️Sonnenzeichen — Persönlichkeitskern 2)🌙Mondzeichen — emotionale Natur 3)⬆️Aszendent — wie andere Sie wahrnehmen 4)🪐Schlüsselplaneten & Positionen 5)🏠Wichtigste Häuser 6)💫Kartenstärken 7)⚡Herausforderungen & Lektionen 8)🌟Hauptlebensthemen 9)🔮3-4 konkrete Empfehlungen. Stil: tiefgründig, weise, ernsthaft. Daten: ",
 }
+
 COMPAT_PROMPT = {
-    "uk": "Ти — Аарон, майстер астрології та нумерології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Структура: 1)🌟Астрологічна сумісність 2)🔢Нумерологічна сумісність 3)❤️Романтика 4)🤝Дружба/справа 5)⚡Точки напруги 6)💫Спільні сильні сторони 7)🔮Прогноз 8)💡3 поради. Відверто, глибоко, з теплотою. Дані: ",
-    "ru": "Ты — Аарон, мастер астрологии и нумерологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Структура: 1)🌟Астрологическая совместимость 2)🔢Нумерологическая совместимость 3)❤️Романтика 4)🤝Дружба/дело 5)⚡Точки напряжения 6)💫Общие сильные стороны 7)🔮Прогноз 8)💡3 совета. Откровенно, глубоко, с теплотой. Данные: ",
-    "en": "You are Aaron, master astrologer and numerologist. Reply EXCLUSIVELY IN ENGLISH. Structure: 1)🌟Astrological compatibility 2)🔢Numerological compatibility 3)❤️Romance 4)🤝Friendship/business 5)⚡Tension points 6)💫Shared strengths 7)🔮Forecast 8)💡3 tips. Honest, deep, warm. Data: ",
-    "de": "Du bist Aaron, Meister-Astrologe und Numerologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Struktur: 1)🌟Astrologische Kompatibilität 2)🔢Numerologische Kompatibilität 3)❤️Romantik 4)🤝Freundschaft/Geschäft 5)⚡Spannungspunkte 6)💫Gemeinsame Stärken 7)🔮Prognose 8)💡3 Tipps. Ehrlich, tiefgründig, warm. Daten: ",
+    "uk": "Ти — Аарон, майстер астрології та нумерології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Структура: 1)🌟Астрологічна сумісність (знаки зодіаку) 2)🔢Нумерологічна сумісність (числа життєвого шляху) 3)❤️Романтика та пристрасть 4)🤝Дружба та спільна справа 5)⚡Точки напруги та як їх долати 6)💫Спільні сильні сторони 7)🔮Загальний прогноз 8)💡3 практичні поради. Відверто, глибоко, з теплотою. Дані: ",
+    "ru": "Ты — Аарон, мастер астрологии и нумерологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Структура: 1)🌟Астрологическая совместимость (знаки зодиака) 2)🔢Нумерологическая совместимость (числа жизненного пути) 3)❤️Романтика и страсть 4)🤝Дружба и общее дело 5)⚡Точки напряжения и как их преодолевать 6)💫Общие сильные стороны 7)🔮Общий прогноз 8)💡3 практических совета. Откровенно, глубоко, с теплотой. Данные: ",
+    "en": "You are Aaron, master astrologer and numerologist. Reply EXCLUSIVELY IN ENGLISH. Structure: 1)🌟Astrological compatibility 2)🔢Numerological compatibility 3)❤️Romance & passion 4)🤝Friendship & business 5)⚡Tension points & how to overcome them 6)💫Shared strengths 7)🔮Overall forecast 8)💡3 practical tips. Honest, deep, warm. Data: ",
+    "de": "Du bist Aaron, Meister-Astrologe und Numerologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Struktur: 1)🌟Astrologische Kompatibilität 2)🔢Numerologische Kompatibilität 3)❤️Romantik & Leidenschaft 4)🤝Freundschaft & Geschäft 5)⚡Spannungspunkte & Lösungen 6)💫Gemeinsame Stärken 7)🔮Gesamtprognose 8)💡3 praktische Tipps. Ehrlich, tiefgründig, warm. Daten: ",
 }
+
 HOROSCOPE_PROMPT = {
-    "uk": "Ти — Аарон, майстер астрології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Визнач знак зодіаку. Склади гороскоп:\n📅 СЬОГОДНІ ({today}): енергія дня, любов, робота, здоров'я, щасливі числа\n📅 ЗАВТРА ({tomorrow}): енергія дня, любов, робота, здоров'я, порада. Конкретно та практично. Дата народження: ",
-    "ru": "Ты — Аарон, мастер астрологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Определи знак зодиака. Составь гороскоп:\n📅 СЕГОДНЯ ({today}): энергия дня, любовь, работа, здоровье, счастливые числа\n📅 ЗАВТРА ({tomorrow}): энергия дня, любовь, работа, здоровье, совет. Конкретно и практично. Дата рождения: ",
-    "en": "You are Aaron, master astrologer. Reply EXCLUSIVELY IN ENGLISH. Determine zodiac sign. Compose horoscope:\n📅 TODAY ({today}): day energy, love, work, health, lucky numbers\n📅 TOMORROW ({tomorrow}): day energy, love, work, health, advice. Specific and practical. Birth date: ",
-    "de": "Du bist Aaron, Meister-Astrologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Bestimme Tierkreiszeichen. Erstelle Horoskop:\n📅 HEUTE ({today}): Tagesenergie, Liebe, Arbeit, Gesundheit, Glückszahlen\n📅 MORGEN ({tomorrow}): Tagesenergie, Liebe, Arbeit, Gesundheit, Rat. Konkret und praktisch. Geburtsdatum: ",
+    "uk": """Ти — Аарон, майстер астрології. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ.
+ВАЖЛИВО про граничні дати: якщо дата народження припадає на 19-20 лютого, 20-21 березня, 19-20 квітня, 20-21 травня, 20-21 червня, 22-23 липня, 22-23 серпня, 22-23 вересня, 22-23 жовтня, 21-22 листопада, 21-22 грудня, 19-20 січня — поясни що людина знаходиться на куспіді (межі двох знаків) і розкажи про вплив обох знаків.
+Визнач знак зодіаку та склади гороскоп:
+📅 СЬОГОДНІ ({today}):
+- Загальна енергія дня
+- Любов і стосунки  
+- Робота і фінанси
+- Здоров'я
+- Щасливі числа та колір
+
+📅 ЗАВТРА ({tomorrow}):
+- Загальна енергія дня
+- Любов і стосунки
+- Робота і фінанси
+- Здоров'я
+- Головна порада дня
+
+Конкретно, практично, надихаючо. Дата народження: """,
+
+    "ru": """Ты — Аарон, мастер астрологии. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ.
+ВАЖНО о граничных датах: если дата рождения приходится на 19-20 февраля, 20-21 марта, 19-20 апреля, 20-21 мая, 20-21 июня, 22-23 июля, 22-23 августа, 22-23 сентября, 22-23 октября, 21-22 ноября, 21-22 декабря, 19-20 января — объясни что человек находится на куспиде (границе двух знаков) и расскажи о влиянии обоих знаков.
+Определи знак зодиака и составь гороскоп:
+📅 СЕГОДНЯ ({today}):
+- Общая энергия дня
+- Любовь и отношения
+- Работа и финансы
+- Здоровье
+- Счастливые числа и цвет
+
+📅 ЗАВТРА ({tomorrow}):
+- Общая энергия дня
+- Любовь и отношения
+- Работа и финансы
+- Здоровье
+- Главный совет дня
+
+Конкретно, практично, вдохновляюще. Дата рождения: """,
+
+    "en": """You are Aaron, master astrologer. Reply EXCLUSIVELY IN ENGLISH.
+IMPORTANT about cusp dates: if the birth date falls on Feb 19-20, Mar 20-21, Apr 19-20, May 20-21, Jun 20-21, Jul 22-23, Aug 22-23, Sep 22-23, Oct 22-23, Nov 21-22, Dec 21-22, Jan 19-20 — explain the person is on a cusp (border of two signs) and describe the influence of both signs.
+Determine zodiac sign and compose horoscope:
+📅 TODAY ({today}):
+- General energy of the day
+- Love & relationships
+- Work & finances
+- Health
+- Lucky numbers & color
+
+📅 TOMORROW ({tomorrow}):
+- General energy of the day
+- Love & relationships
+- Work & finances
+- Health
+- Main advice of the day
+
+Specific, practical, inspiring. Birth date: """,
+
+    "de": """Du bist Aaron, Meister-Astrologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH.
+WICHTIG bei Grenzdaten: Falls das Geburtsdatum auf den 19.-20. Feb, 20.-21. März, 19.-20. Apr, 20.-21. Mai, 20.-21. Jun, 22.-23. Jul, 22.-23. Aug, 22.-23. Sep, 22.-23. Okt, 21.-22. Nov, 21.-22. Dez, 19.-20. Jan fällt — erkläre dass die Person auf einem Kusp (Grenze zweier Zeichen) ist und beschreibe den Einfluss beider Zeichen.
+Bestimme Tierkreiszeichen und erstelle Horoskop:
+📅 HEUTE ({today}):
+- Allgemeine Tagesenergie
+- Liebe & Beziehungen
+- Arbeit & Finanzen
+- Gesundheit
+- Glückszahlen & Farbe
+
+📅 MORGEN ({tomorrow}):
+- Allgemeine Tagesenergie
+- Liebe & Beziehungen
+- Arbeit & Finanzen
+- Gesundheit
+- Hauptrat des Tages
+
+Konkret, praktisch, inspirierend. Geburtsdatum: """,
 }
 
 # ─────────────────────────────────────────────
@@ -200,9 +290,10 @@ def lang_kb():
 def menu_kb(lang):
     t = TEXTS[lang]
     return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text=t["menu_palm"]),  KeyboardButton(text=t["menu_num"])],
-        [KeyboardButton(text=t["menu_natal"]), KeyboardButton(text=t["menu_compat"])],
+        [KeyboardButton(text=t["menu_palm"]),      KeyboardButton(text=t["menu_num"])],
+        [KeyboardButton(text=t["menu_natal"]),     KeyboardButton(text=t["menu_compat"])],
         [KeyboardButton(text=t["menu_horoscope"])],
+        [KeyboardButton(text=t["exit_btn"])],
     ], resize_keyboard=True)
 
 def hand_kb(lang):
@@ -228,16 +319,12 @@ async def send_long(msg: Message, text: str):
 def get_state(uid):
     return user_state.get(uid, {"lang": "ru", "step": "lang"})
 
-def show_menu(lang):
-    return TEXTS[lang]["choose_menu"]
-
 # ─────────────────────────────────────────────
 # /start
 # ─────────────────────────────────────────────
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
-    uid = message.from_user.id
-    user_state[uid] = {"step": "lang"}
+    user_state[message.from_user.id] = {"step": "lang"}
     await message.answer(
         "🔮 Вітаю / Привет / Hello / Hallo!",
         reply_markup=lang_kb()
@@ -248,14 +335,14 @@ async def cmd_start(message: Message):
 # ─────────────────────────────────────────────
 @dp.message(F.text)
 async def handle_text(message: Message):
-    uid  = message.from_user.id
-    text = message.text.strip()
+    uid   = message.from_user.id
+    text  = message.text.strip()
     state = get_state(uid)
     step  = state.get("step", "lang")
     lang  = state.get("lang", "ru")
     t     = TEXTS.get(lang, TEXTS["ru"])
 
-    # ── 1. Выбор языка ──────────────────────
+    # ── Выбор языка ─────────────────────────
     if step == "lang":
         lang_map = {
             "🇺🇦 Українська": "uk",
@@ -271,30 +358,32 @@ async def handle_text(message: Message):
             await message.answer("🔮", reply_markup=lang_kb())
         return
 
-    # ── 2. Назад в меню ─────────────────────
+    # ── Выход ───────────────────────────────
+    if text == t.get("exit_btn"):
+        user_state[uid] = {"step": "lang"}
+        await message.answer(t["exit_msg"], reply_markup=ReplyKeyboardRemove())
+        return
+
+    # ── Назад в меню ────────────────────────
     if text == t["back"]:
         user_state[uid] = {"lang": lang, "step": "menu"}
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── 3. Главное меню ─────────────────────
+    # ── Главное меню ────────────────────────
     if step == "menu":
         if text == t["menu_palm"]:
             user_state[uid].update({"step": "palm_hand"})
             await message.answer(t["choose_hand"], reply_markup=hand_kb(lang))
-
         elif text == t["menu_num"]:
             user_state[uid].update({"step": "num_input"})
             await message.answer(t["num_ask"], reply_markup=back_kb(lang))
-
         elif text == t["menu_natal"]:
             user_state[uid].update({"step": "natal_input"})
             await message.answer(t["natal_ask"], reply_markup=back_kb(lang))
-
         elif text == t["menu_compat"]:
             user_state[uid].update({"step": "compat_1"})
             await message.answer(t["compat_ask1"], reply_markup=back_kb(lang))
-
         elif text == t["menu_horoscope"]:
             user_state[uid].update({"step": "horoscope_input"})
             await message.answer(t["horoscope_ask"], reply_markup=back_kb(lang))
@@ -302,7 +391,7 @@ async def handle_text(message: Message):
             await message.answer(t["unexpected"], reply_markup=menu_kb(lang))
         return
 
-    # ── 4. Хиромантия — выбор руки ──────────
+    # ── Хиромантия — выбор руки ─────────────
     if step == "palm_hand":
         if text == t["left_btn"]:
             user_state[uid].update({"step": "palm_photo", "hand": "left"})
@@ -317,7 +406,7 @@ async def handle_text(message: Message):
             await message.answer(t["choose_hand"], reply_markup=hand_kb(lang))
         return
 
-    # ── 5. Нумерология ──────────────────────
+    # ── Нумерология ─────────────────────────
     if step == "num_input":
         await message.answer(t["num_analyzing"])
         try:
@@ -330,7 +419,7 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── 6. Натальная карта ──────────────────
+    # ── Натальная карта ─────────────────────
     if step == "natal_input":
         await message.answer(t["natal_analyzing"])
         try:
@@ -343,7 +432,7 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── 7. Совместимость ────────────────────
+    # ── Совместимость ───────────────────────
     if step == "compat_1":
         user_state[uid].update({"step": "compat_2", "compat_1": text})
         await message.answer(t["compat_ask2"])
@@ -354,7 +443,9 @@ async def handle_text(message: Message):
         await message.answer(t["compat_analyzing"])
         try:
             resp = model.generate_content(
-                COMPAT_PROMPT[lang] + f"Людина 1 / Человек 1: {person1} | Людина 2 / Человек 2: {text}"
+                COMPAT_PROMPT[lang] +
+                f"Людина 1 / Человек 1 / Person 1: {person1} | "
+                f"Людина 2 / Человек 2 / Person 2: {text}"
             )
             await send_long(message, resp.text)
         except Exception as e:
@@ -364,7 +455,7 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── 8. Гороскоп ─────────────────────────
+    # ── Гороскоп ────────────────────────────
     if step == "horoscope_input":
         today    = datetime.now().strftime("%d.%m.%Y")
         tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
@@ -380,7 +471,6 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # Непредвиденное
     await message.answer(t["unexpected"], reply_markup=menu_kb(lang))
 
 
@@ -399,7 +489,6 @@ async def handle_photo(message: Message):
         await message.answer(t["unexpected"], reply_markup=menu_kb(lang))
         return
 
-    # Скачиваем фото
     photo = message.photo[-1]
     file  = await bot.get_file(photo.file_id)
     path  = f"photo_{uid}.jpg"
@@ -409,13 +498,11 @@ async def handle_photo(message: Message):
     if os.path.exists(path):
         os.remove(path)
 
-    # Ждём левую руку (обе)
     if step == "palm_left":
         user_state[uid].update({"step": "palm_right", "left_img": img})
         await message.answer(t["send_second"])
         return
 
-    # Получили правую — анализируем обе
     if step == "palm_right":
         await message.answer(t["analyzing_both"])
         left_img = state.get("left_img", "")
@@ -434,7 +521,6 @@ async def handle_photo(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # Одна рука
     hand = state.get("hand", "right")
     await message.answer(t["analyzing"])
     try:
