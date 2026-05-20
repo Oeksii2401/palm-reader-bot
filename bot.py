@@ -18,9 +18,6 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 
 user_state = {}
 
-AARON_PHOTO = "https://raw.githubusercontent.com/Oeksii2401/palm-reader-bot/main/aaron.png"
-LOADING_GIF = "https://media1.tenor.com/m/PP2tn6y3chQAAAAC/color-spiral.gif"
-
 TEXTS = {
     "uk": {
         "choose_menu":     "🔮 Що бажаєте дізнатися?",
@@ -53,7 +50,6 @@ TEXTS = {
         "horoscope_calc":  "🌟 Складаю гороскоп на сьогодні та завтра...",
         "error":           "😔 Щось пішло не так. Спробуйте ще раз.",
         "unexpected":      "Скористайтеся кнопками меню 👇",
-        "welcome":         "🔮 Вітаю! Я — Аарон, майстер хіромантії та астрології з 25-річним досвідом.\n\nЧитаю долоні, будую натальні карти, розраховую нумерологічні портрети та складаю гороскопи.\n\n✦ ═══════════════════ ✦\n\nОберіть мову:",
     },
     "ru": {
         "choose_menu":     "🔮 Что желаете узнать?",
@@ -86,7 +82,6 @@ TEXTS = {
         "horoscope_calc":  "🌟 Составляю гороскоп на сегодня и завтра...",
         "error":           "😔 Что-то пошло не так. Попробуйте ещё раз.",
         "unexpected":      "Используйте кнопки меню 👇",
-        "welcome":         "🔮 Приветствую! Я — Аарон, мастер хиромантии и астрологии с 25-летним опытом.\n\nЧитаю ладони, строю натальные карты, рассчитываю нумерологические портреты и составляю гороскопы.\n\n✦ ═══════════════════ ✦\n\nВыберите язык:",
     },
     "en": {
         "choose_menu":     "🔮 What would you like to explore?",
@@ -119,7 +114,6 @@ TEXTS = {
         "horoscope_calc":  "🌟 Preparing your horoscope for today and tomorrow...",
         "error":           "😔 Something went wrong. Please try again.",
         "unexpected":      "Please use the menu buttons 👇",
-        "welcome":         "🔮 Welcome! I am Aaron, master of palmistry and astrology with 25 years of experience.\n\nI read palms, build natal charts, calculate numerological portraits and compose horoscopes.\n\n✦ ═══════════════════ ✦\n\nChoose language:",
     },
     "de": {
         "choose_menu":     "🔮 Was möchten Sie erkunden?",
@@ -152,7 +146,6 @@ TEXTS = {
         "horoscope_calc":  "🌟 Erstelle Ihr Horoskop für heute und morgen...",
         "error":           "😔 Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
         "unexpected":      "Bitte verwenden Sie die Menü-Schaltflächen 👇",
-        "welcome":         "🔮 Willkommen! Ich bin Aaron, Meister der Handlesekunst und Astrologie mit 25 Jahren Erfahrung.\n\nIch lese Handflächen, erstelle Geburtshoroskope, berechne numerologische Porträts und verfasse Horoskope.\n\n✦ ═══════════════════ ✦\n\nSprache wählen:",
     }
 }
 
@@ -323,22 +316,6 @@ async def send_long(msg: Message, text: str):
     for i in range(0, len(text), 4000):
         await msg.answer(text[i:i+4000])
 
-async def send_loading(msg: Message) -> int:
-    """Отправляет GIF загрузки и возвращает message_id для удаления"""
-    try:
-        loading_msg = await msg.answer_animation(LOADING_GIF)
-        return loading_msg.message_id
-    except:
-        return None
-
-async def delete_loading(msg: Message, loading_id: int):
-    """Удаляет GIF загрузки"""
-    if loading_id:
-        try:
-            await bot.delete_message(msg.chat.id, loading_id)
-        except:
-            pass
-
 def get_state(uid):
     return user_state.get(uid, {"lang": "ru", "step": "lang"})
 
@@ -348,9 +325,8 @@ def get_state(uid):
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_state[message.from_user.id] = {"step": "lang"}
-    await message.answer_photo(
-        photo=AARON_PHOTO,
-        caption="🔮 Вітаю / Привет / Hello / Hallo!\n\nЯ — Аарон, майстер хіромантії та астрології.\nI am Aaron, master of palmistry and astrology.\n\n✦ ═══════════════════ ✦\n\nОберіть мову / Choose language:",
+    await message.answer(
+        "🔮 Вітаю / Привет / Hello / Hallo!",
         reply_markup=lang_kb()
     )
 
@@ -432,14 +408,12 @@ async def handle_text(message: Message):
 
     # ── Нумерология ─────────────────────────
     if step == "num_input":
-        loading_id = await send_loading(message)
+        await message.answer(t["num_analyzing"])
         try:
             resp = model.generate_content(NUMEROLOGY_PROMPT[lang] + text)
-            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
-            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -447,14 +421,12 @@ async def handle_text(message: Message):
 
     # ── Натальная карта ─────────────────────
     if step == "natal_input":
-        loading_id = await send_loading(message)
+        await message.answer(t["natal_analyzing"])
         try:
             resp = model.generate_content(NATAL_PROMPT[lang] + text)
-            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
-            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -468,18 +440,16 @@ async def handle_text(message: Message):
 
     if step == "compat_2":
         person1 = state.get("compat_1", "")
-        loading_id = await send_loading(message)
+        await message.answer(t["compat_analyzing"])
         try:
             resp = model.generate_content(
                 COMPAT_PROMPT[lang] +
                 f"Людина 1 / Человек 1 / Person 1: {person1} | "
                 f"Людина 2 / Человек 2 / Person 2: {text}"
             )
-            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
-            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -489,15 +459,13 @@ async def handle_text(message: Message):
     if step == "horoscope_input":
         today    = datetime.now().strftime("%d.%m.%Y")
         tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
-        loading_id = await send_loading(message)
+        await message.answer(t["horoscope_calc"])
         try:
-            prompt = HOROSCOPE_PROMPT[lang].replace("{today}", today).replace("{tomorrow}", tomorrow) + text
+            prompt = HOROSCOPE_PROMPT[lang].format(today=today, tomorrow=tomorrow) + text
             resp = model.generate_content(prompt)
-            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
-            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -536,7 +504,7 @@ async def handle_photo(message: Message):
         return
 
     if step == "palm_right":
-        loading_id = await send_loading(message)
+        await message.answer(t["analyzing_both"])
         left_img = state.get("left_img", "")
         try:
             resp = model.generate_content([
@@ -545,29 +513,25 @@ async def handle_photo(message: Message):
                 {"inline_data": {"mime_type": "image/jpeg", "data": img}},
                 PALM_PROMPTS[lang]["both"]
             ])
-            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
-            await delete_loading(message, loading_id)
             await message.answer(t["palm_error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    loading_id = await send_loading(message)
     hand = state.get("hand", "right")
+    await message.answer(t["analyzing"])
     try:
         resp = model.generate_content([
             PALM_SYSTEM[lang],
             {"inline_data": {"mime_type": "image/jpeg", "data": img}},
             PALM_PROMPTS[lang][hand]
         ])
-        await delete_loading(message, loading_id)
         await send_long(message, resp.text)
     except Exception as e:
         logging.error(e)
-        await delete_loading(message, loading_id)
         await message.answer(t["palm_error"])
 
     user_state[uid].update({"step": "menu"})
