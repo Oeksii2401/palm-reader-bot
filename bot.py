@@ -8,14 +8,27 @@ from aiogram.filters import Command
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from datetime import datetime, timedelta
 import google.generativeai as genai
+from groq import Groq
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher()
 
+# Gemini — только для хиромантии (фото)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-2.0-flash')
+gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+
+# Groq — для всех текстовых разделов
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+def ask_groq(prompt: str) -> str:
+    resp = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4000,
+    )
+    return resp.choices[0].message.content
 
 user_state = {}
 db_pool = None
@@ -303,29 +316,19 @@ async def init_db():
 
 async def get_or_create_user(uid: int):
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow(
-            'SELECT * FROM users WHERE user_id = $1', uid
-        )
+        user = await conn.fetchrow('SELECT * FROM users WHERE user_id = $1', uid)
         if not user:
-            await conn.execute(
-                'INSERT INTO users (user_id) VALUES ($1)', uid
-            )
-            user = await conn.fetchrow(
-                'SELECT * FROM users WHERE user_id = $1', uid
-            )
+            await conn.execute('INSERT INTO users (user_id) VALUES ($1)', uid)
+            user = await conn.fetchrow('SELECT * FROM users WHERE user_id = $1', uid)
         return user
 
 async def save_lang(uid: int, lang: str):
     async with db_pool.acquire() as conn:
-        await conn.execute(
-            'UPDATE users SET lang = $1 WHERE user_id = $2', lang, uid
-        )
+        await conn.execute('UPDATE users SET lang = $1 WHERE user_id = $2', lang, uid)
 
 async def increment_uses(uid: int):
     async with db_pool.acquire() as conn:
-        await conn.execute(
-            'UPDATE users SET free_uses = free_uses + 1 WHERE user_id = $1', uid
-        )
+        await conn.execute('UPDATE users SET free_uses = free_uses + 1 WHERE user_id = $1', uid)
 
 # ─────────────────────────────────────────────
 # КЛАВИАТУРЫ
@@ -374,9 +377,7 @@ def get_state(uid):
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     uid = message.from_user.id
-    # Создаём или загружаем пользователя из БД
     user = await get_or_create_user(uid)
-    # Восстанавливаем язык из БД если он уже был выбран
     saved_lang = user['lang'] if user else 'ru'
     user_state[uid] = {"step": "lang", "lang": saved_lang}
     await message.answer(
@@ -396,7 +397,6 @@ async def handle_text(message: Message):
     lang  = state.get("lang", "ru")
     t     = TEXTS.get(lang, TEXTS["ru"])
 
-    # ── Выбор языка ─────────────────────────
     if step == "lang":
         lang_map = {
             "🇺🇦 Українська": "uk",
@@ -407,7 +407,6 @@ async def handle_text(message: Message):
         if text in lang_map:
             lang = lang_map[text]
             user_state[uid] = {"lang": lang, "step": "menu"}
-            # Сохраняем язык в БД
             await get_or_create_user(uid)
             await save_lang(uid, lang)
             await message.answer(TEXTS[lang]["choose_menu"], reply_markup=menu_kb(lang))
@@ -415,19 +414,16 @@ async def handle_text(message: Message):
             await message.answer("🔮", reply_markup=lang_kb())
         return
 
-    # ── Выход ───────────────────────────────
     if text == t.get("exit_btn"):
         user_state[uid] = {"step": "lang"}
         await message.answer(t["exit_msg"], reply_markup=ReplyKeyboardRemove())
         return
 
-    # ── Назад в меню ────────────────────────
     if text == t["back"]:
         user_state[uid] = {"lang": lang, "step": "menu"}
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── Главное меню ────────────────────────
     if step == "menu":
         if text == t["menu_palm"]:
             user_state[uid].update({"step": "palm_hand"})
@@ -448,7 +444,6 @@ async def handle_text(message: Message):
             await message.answer(t["unexpected"], reply_markup=menu_kb(lang))
         return
 
-    # ── Хиромантия — выбор руки ─────────────
     if step == "palm_hand":
         if text == t["left_btn"]:
             user_state[uid].update({"step": "palm_photo", "hand": "left"})
@@ -463,12 +458,12 @@ async def handle_text(message: Message):
             await message.answer(t["choose_hand"], reply_markup=hand_kb(lang))
         return
 
-    # ── Нумерология ─────────────────────────
+    # ── Нумерология (Groq) ──────────────────
     if step == "num_input":
         await message.answer(t["num_analyzing"])
         try:
-            resp = model.generate_content(NUMEROLOGY_PROMPT[lang] + text)
-            await send_long(message, resp.text)
+            resp = await asyncio.to_thread(ask_groq, NUMEROLOGY_PROMPT[lang] + text)
+            await send_long(message, resp)
             await increment_uses(uid)
         except Exception as e:
             logging.error(e)
@@ -477,12 +472,12 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── Натальная карта ─────────────────────
+    # ── Натальная карта (Groq) ──────────────
     if step == "natal_input":
         await message.answer(t["natal_analyzing"])
         try:
-            resp = model.generate_content(NATAL_PROMPT[lang] + text)
-            await send_long(message, resp.text)
+            resp = await asyncio.to_thread(ask_groq, NATAL_PROMPT[lang] + text)
+            await send_long(message, resp)
             await increment_uses(uid)
         except Exception as e:
             logging.error(e)
@@ -491,7 +486,7 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── Совместимость ───────────────────────
+    # ── Совместимость (Groq) ────────────────
     if step == "compat_1":
         user_state[uid].update({"step": "compat_2", "compat_1": text})
         await message.answer(t["compat_ask2"])
@@ -501,12 +496,13 @@ async def handle_text(message: Message):
         person1 = state.get("compat_1", "")
         await message.answer(t["compat_analyzing"])
         try:
-            resp = model.generate_content(
+            prompt = (
                 COMPAT_PROMPT[lang] +
                 f"Людина 1 / Человек 1 / Person 1: {person1} | "
                 f"Людина 2 / Человек 2 / Person 2: {text}"
             )
-            await send_long(message, resp.text)
+            resp = await asyncio.to_thread(ask_groq, prompt)
+            await send_long(message, resp)
             await increment_uses(uid)
         except Exception as e:
             logging.error(e)
@@ -515,15 +511,15 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── Гороскоп ────────────────────────────
+    # ── Гороскоп (Groq) ─────────────────────
     if step == "horoscope_input":
         today    = datetime.now().strftime("%d.%m.%Y")
         tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
         await message.answer(t["horoscope_calc"])
         try:
             prompt = HOROSCOPE_PROMPT[lang].format(today=today, tomorrow=tomorrow) + text
-            resp = model.generate_content(prompt)
-            await send_long(message, resp.text)
+            resp = await asyncio.to_thread(ask_groq, prompt)
+            await send_long(message, resp)
             await increment_uses(uid)
         except Exception as e:
             logging.error(e)
@@ -536,7 +532,7 @@ async def handle_text(message: Message):
 
 
 # ─────────────────────────────────────────────
-# ОБРАБОТКА ФОТО
+# ОБРАБОТКА ФОТО — Хиромантия (Gemini)
 # ─────────────────────────────────────────────
 @dp.message(F.photo)
 async def handle_photo(message: Message):
@@ -568,7 +564,7 @@ async def handle_photo(message: Message):
         await message.answer(t["analyzing_both"])
         left_img = state.get("left_img", "")
         try:
-            resp = model.generate_content([
+            resp = gemini_model.generate_content([
                 PALM_SYSTEM[lang],
                 {"inline_data": {"mime_type": "image/jpeg", "data": left_img}},
                 {"inline_data": {"mime_type": "image/jpeg", "data": img}},
@@ -586,7 +582,7 @@ async def handle_photo(message: Message):
     hand = state.get("hand", "right")
     await message.answer(t["analyzing"])
     try:
-        resp = model.generate_content([
+        resp = gemini_model.generate_content([
             PALM_SYSTEM[lang],
             {"inline_data": {"mime_type": "image/jpeg", "data": img}},
             PALM_PROMPTS[lang][hand]
