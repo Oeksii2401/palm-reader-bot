@@ -461,7 +461,7 @@ async def handle_text(message: Message):
         tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
         await message.answer(t["horoscope_calc"])
         try:
-            prompt = HOROSCOPE_PROMPT[lang].format(today=today, tomorrow=tomorrow) + text
+            prompt = HOROSCOPE_PROMPT[lang].replace("{today}", today).replace("{tomorrow}", tomorrow) + text
             resp = model.generate_content(prompt)
             await send_long(message, resp.text)
         except Exception as e:
