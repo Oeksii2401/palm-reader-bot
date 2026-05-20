@@ -50,6 +50,7 @@ TEXTS = {
         "horoscope_calc":  "🌟 Складаю гороскоп на сьогодні та завтра...",
         "error":           "😔 Щось пішло не так. Спробуйте ще раз.",
         "unexpected":      "Скористайтеся кнопками меню 👇",
+        "photo_privacy":   "🔒 Конфіденційність: фото використовується виключно для аналізу і автоматично видаляється після обробки. Ми не зберігаємо ваші зображення.",
     },
     "ru": {
         "choose_menu":     "🔮 Что желаете узнать?",
@@ -82,6 +83,7 @@ TEXTS = {
         "horoscope_calc":  "🌟 Составляю гороскоп на сегодня и завтра...",
         "error":           "😔 Что-то пошло не так. Попробуйте ещё раз.",
         "unexpected":      "Используйте кнопки меню 👇",
+        "photo_privacy":   "🔒 Конфиденциальность: фото используется исключительно для анализа и автоматически удаляется после обработки. Мы не храним ваши изображения.",
     },
     "en": {
         "choose_menu":     "🔮 What would you like to explore?",
@@ -114,6 +116,7 @@ TEXTS = {
         "horoscope_calc":  "🌟 Preparing your horoscope for today and tomorrow...",
         "error":           "😔 Something went wrong. Please try again.",
         "unexpected":      "Please use the menu buttons 👇",
+        "photo_privacy":   "🔒 Privacy: your photo is used exclusively for analysis and automatically deleted after processing. We do not store your images.",
     },
     "de": {
         "choose_menu":     "🔮 Was möchten Sie erkunden?",
@@ -146,6 +149,7 @@ TEXTS = {
         "horoscope_calc":  "🌟 Erstelle Ihr Horoskop für heute und morgen...",
         "error":           "😔 Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.",
         "unexpected":      "Bitte verwenden Sie die Menü-Schaltflächen 👇",
+        "photo_privacy":   "🔒 Datenschutz: Ihr Foto wird ausschließlich zur Analyse verwendet und nach der Verarbeitung automatisch gelöscht. Wir speichern keine Bilder.",
     }
 }
 
@@ -279,6 +283,12 @@ Konkret, praktisch, inspirierend. Geburtsdatum: """,
 }
 
 # ─────────────────────────────────────────────
+# МЕДИА
+# ─────────────────────────────────────────────
+AARON_PHOTO = "https://raw.githubusercontent.com/Oeksii2401/palm-reader-bot/main/aaron.png"
+LOADING_GIF = "https://media1.tenor.com/m/PP2tn6y3chQAAAAC/color-spiral.gif"
+
+# ─────────────────────────────────────────────
 # КЛАВИАТУРЫ
 # ─────────────────────────────────────────────
 def lang_kb():
@@ -316,6 +326,22 @@ async def send_long(msg: Message, text: str):
     for i in range(0, len(text), 4000):
         await msg.answer(text[i:i+4000])
 
+async def send_loading(msg: Message):
+    """Отправляет GIF загрузки, возвращает message_id"""
+    try:
+        m = await msg.answer_animation(LOADING_GIF)
+        return m.message_id
+    except Exception:
+        return None
+
+async def delete_loading(msg: Message, loading_id):
+    """Удаляет GIF загрузки"""
+    if loading_id:
+        try:
+            await bot.delete_message(msg.chat.id, loading_id)
+        except Exception:
+            pass
+
 def get_state(uid):
     return user_state.get(uid, {"lang": "ru", "step": "lang"})
 
@@ -325,8 +351,15 @@ def get_state(uid):
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     user_state[message.from_user.id] = {"step": "lang"}
-    await message.answer(
-        "🔮 Вітаю / Привет / Hello / Hallo!",
+    await message.answer_photo(
+        photo=AARON_PHOTO,
+        caption=(
+            "🔮 Вітаю / Привет / Hello / Hallo!\n\n"
+            "Я — Аарон, майстер хіромантії та астрології з 25-річним досвідом.\n"
+            "I am Aaron, master of palmistry & astrology.\n\n"
+            "✦ ═══════════════════ ✦\n\n"
+            "Оберіть мову / Выберите язык / Choose language / Sprache wählen:"
+        ),
         reply_markup=lang_kb()
     )
 
@@ -395,12 +428,15 @@ async def handle_text(message: Message):
     if step == "palm_hand":
         if text == t["left_btn"]:
             user_state[uid].update({"step": "palm_photo", "hand": "left"})
+            await message.answer(t["photo_privacy"])
             await message.answer(t["send_left"], reply_markup=back_kb(lang))
         elif text == t["right_btn"]:
             user_state[uid].update({"step": "palm_photo", "hand": "right"})
+            await message.answer(t["photo_privacy"])
             await message.answer(t["send_right"], reply_markup=back_kb(lang))
         elif text == t["both_btn"]:
             user_state[uid].update({"step": "palm_left", "hand": "both"})
+            await message.answer(t["photo_privacy"])
             await message.answer(t["send_left"], reply_markup=back_kb(lang))
         else:
             await message.answer(t["choose_hand"], reply_markup=hand_kb(lang))
@@ -408,12 +444,14 @@ async def handle_text(message: Message):
 
     # ── Нумерология ─────────────────────────
     if step == "num_input":
-        await message.answer(t["num_analyzing"])
+        loading_id = await send_loading(message)
         try:
             resp = model.generate_content(NUMEROLOGY_PROMPT[lang] + text)
+            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
+            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -421,12 +459,14 @@ async def handle_text(message: Message):
 
     # ── Натальная карта ─────────────────────
     if step == "natal_input":
-        await message.answer(t["natal_analyzing"])
+        loading_id = await send_loading(message)
         try:
             resp = model.generate_content(NATAL_PROMPT[lang] + text)
+            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
+            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -440,16 +480,18 @@ async def handle_text(message: Message):
 
     if step == "compat_2":
         person1 = state.get("compat_1", "")
-        await message.answer(t["compat_analyzing"])
+        loading_id = await send_loading(message)
         try:
             resp = model.generate_content(
                 COMPAT_PROMPT[lang] +
                 f"Людина 1 / Человек 1 / Person 1: {person1} | "
                 f"Людина 2 / Человек 2 / Person 2: {text}"
             )
+            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
+            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -459,13 +501,15 @@ async def handle_text(message: Message):
     if step == "horoscope_input":
         today    = datetime.now().strftime("%d.%m.%Y")
         tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m.%Y")
-        await message.answer(t["horoscope_calc"])
+        loading_id = await send_loading(message)
         try:
-            prompt = HOROSCOPE_PROMPT[lang].format(today=today, tomorrow=tomorrow) + text
+            prompt = HOROSCOPE_PROMPT[lang].replace("{today}", today).replace("{tomorrow}", tomorrow) + text
             resp = model.generate_content(prompt)
+            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
+            await delete_loading(message, loading_id)
             await message.answer(t["error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
@@ -489,6 +533,8 @@ async def handle_photo(message: Message):
         await message.answer(t["unexpected"], reply_markup=menu_kb(lang))
         return
 
+    photo_msg_id = message.message_id  # сохраняем для удаления
+
     photo = message.photo[-1]
     file  = await bot.get_file(photo.file_id)
     path  = f"photo_{uid}.jpg"
@@ -499,13 +545,14 @@ async def handle_photo(message: Message):
         os.remove(path)
 
     if step == "palm_left":
-        user_state[uid].update({"step": "palm_right", "left_img": img})
+        user_state[uid].update({"step": "palm_right", "left_img": img, "left_msg_id": photo_msg_id})
         await message.answer(t["send_second"])
         return
 
     if step == "palm_right":
-        await message.answer(t["analyzing_both"])
-        left_img = state.get("left_img", "")
+        left_img    = state.get("left_img", "")
+        left_msg_id = state.get("left_msg_id")
+        loading_id  = await send_loading(message)
         try:
             resp = model.generate_content([
                 PALM_SYSTEM[lang],
@@ -513,25 +560,38 @@ async def handle_photo(message: Message):
                 {"inline_data": {"mime_type": "image/jpeg", "data": img}},
                 PALM_PROMPTS[lang]["both"]
             ])
+            try:
+                await bot.delete_message(message.chat.id, left_msg_id)
+                await bot.delete_message(message.chat.id, photo_msg_id)
+            except Exception:
+                pass
+            await delete_loading(message, loading_id)
             await send_long(message, resp.text)
         except Exception as e:
             logging.error(e)
+            await delete_loading(message, loading_id)
             await message.answer(t["palm_error"])
         user_state[uid].update({"step": "menu"})
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    hand = state.get("hand", "right")
-    await message.answer(t["analyzing"])
+    hand       = state.get("hand", "right")
+    loading_id = await send_loading(message)
     try:
         resp = model.generate_content([
             PALM_SYSTEM[lang],
             {"inline_data": {"mime_type": "image/jpeg", "data": img}},
             PALM_PROMPTS[lang][hand]
         ])
+        try:
+            await bot.delete_message(message.chat.id, photo_msg_id)
+        except Exception:
+            pass
+        await delete_loading(message, loading_id)
         await send_long(message, resp.text)
     except Exception as e:
         logging.error(e)
+        await delete_loading(message, loading_id)
         await message.answer(t["palm_error"])
 
     user_state[uid].update({"step": "menu"})
