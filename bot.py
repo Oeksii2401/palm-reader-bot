@@ -42,7 +42,7 @@ REF_DAYS_L2    = 10
 AARON_PHOTO_URL = "https://raw.githubusercontent.com/Oeksii2401/palm-reader-bot/main/aaron.png"
 
 # GIF загрузки (color-spiral с Tenor) — вставь актуальный прямой URL если изменился
-LOADING_GIF_URL = "https://media.tenor.com/g9QJH0g6hagAAAAC/color-spiral-hypnotic.gif"
+LOADING_GIF_URL = "https://raw.githubusercontent.com/Oeksii2401/palm-reader-bot/main/Star%20Wars%20Space%20GIF%20by%20Feliks%20Tomasz%20Konczakowski.gif"
 
 # ─────────────────────────────────────────────
 # DATABASE
