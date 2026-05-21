@@ -32,6 +32,7 @@ user_state: dict = {}
 db_pool = None
 
 FREE_LIMIT     = 3
+ADMIN_IDS      = {189999355}  # админы — бесплатный доступ всегда
 STANDARD_STARS = 444
 PREMIUM_STARS  = 777
 REF_DAYS_L1    = 30
@@ -93,6 +94,8 @@ async def increment_uses(user_id: int):
         )
 
 async def can_use(user_id: int) -> bool:
+    if user_id in ADMIN_IDS:
+        return True
     user = await get_or_create_user(user_id)
     if user['is_subscribed'] and user['sub_until'] and user['sub_until'] > datetime.now():
         return True
