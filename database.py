@@ -28,6 +28,7 @@ async def init_db():
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_time TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_enabled BOOL DEFAULT FALSE")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan INT DEFAULT 0")
     logging.info("DB ready")
 
 
