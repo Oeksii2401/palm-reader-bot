@@ -14,7 +14,7 @@ def menu_kb(lang: str):
     return ReplyKeyboardMarkup(keyboard=[
         [KeyboardButton(text=t["menu_palm"]),      KeyboardButton(text=t["menu_num"])],
         [KeyboardButton(text=t["menu_natal"]),     KeyboardButton(text=t["menu_compat"])],
-        [KeyboardButton(text=t["menu_horoscope"])],
+        [KeyboardButton(text=t["menu_horoscope"]), KeyboardButton(text=t["menu_name"])],
         [KeyboardButton(text=t["exit_btn"])],
     ], resize_keyboard=True)
 

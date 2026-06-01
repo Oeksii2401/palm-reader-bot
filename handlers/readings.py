@@ -12,7 +12,8 @@ from keyboards import (
     ALL_STANDARD_BTNS, ALL_PREMIUM_BTNS
 )
 from prompts import (
-    NUMEROLOGY_PROMPT, NATAL_PROMPT, COMPAT_PROMPT, HOROSCOPE_PROMPT
+    NUMEROLOGY_PROMPT, NATAL_PROMPT, COMPAT_PROMPT, HOROSCOPE_PROMPT,
+    NAME_PROMPT_FREE, NAME_PROMPT_STANDARD, NAME_PROMPT_PREMIUM
 )
 from utils import send_long, send_loading_gif, groq_ask
 from state import user_state
@@ -55,6 +56,48 @@ async def send_sub_invoice(uid: int, plan: str, lang: str, bot):
             currency="XTR",
             prices=[LabeledPrice(label=t["inv_premium_title"], amount=PREMIUM_STARS)],
         )
+
+
+def get_name_prompt(user: dict, lang: str, uid: int) -> str:
+    """Выбирает промпт в зависимости от уровня подписки."""
+    now = datetime.now()
+    is_admin = uid in ADMIN_IDS
+    is_premium = (
+        user['is_subscribed'] and user['sub_until'] and
+        user['sub_until'] > now and (user['plan'] or 0) == 2
+    )
+    is_standard = (
+        user['is_subscribed'] and user['sub_until'] and
+        user['sub_until'] > now and (user['plan'] or 0) >= 1
+    )
+    if is_admin or is_premium:
+        return NAME_PROMPT_PREMIUM[lang]
+    elif is_standard:
+        return NAME_PROMPT_STANDARD[lang]
+    else:
+        return NAME_PROMPT_FREE[lang]
+
+
+def get_name_hint(user: dict, lang: str, uid: int) -> str | None:
+    """Возвращает подсказку об апгрейде или None если уже максимум."""
+    now = datetime.now()
+    if uid in ADMIN_IDS:
+        return None
+    is_premium = (
+        user['is_subscribed'] and user['sub_until'] and
+        user['sub_until'] > now and (user['plan'] or 0) == 2
+    )
+    is_standard = (
+        user['is_subscribed'] and user['sub_until'] and
+        user['sub_until'] > now and (user['plan'] or 0) >= 1
+    )
+    t = TEXTS[lang]
+    if is_premium:
+        return None
+    elif is_standard:
+        return t["name_upgrade_prem"]
+    else:
+        return t["name_upgrade_std"]
 
 
 @router.message(F.text)
@@ -131,6 +174,11 @@ async def handle_text(message: Message):
                 return
             user_state[uid].update({"step": "horoscope_input"})
             await message.answer(t["horoscope_ask"], reply_markup=back_kb(lang))
+        elif text == t["menu_name"]:
+            if not await check_access(message, uid, lang):
+                return
+            user_state[uid].update({"step": "name_input"})
+            await message.answer(t["name_ask"], reply_markup=back_kb(lang))
         else:
             await message.answer(t["unexpected"], reply_markup=menu_kb(lang))
         return
@@ -234,6 +282,32 @@ async def handle_text(message: Message):
                 pass
             await send_long(message, result)
             await increment_uses(uid)
+        except Exception as e:
+            logging.error(e)
+            await message.answer(t["error"])
+        user_state[uid].update({"step": "menu"})
+        await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
+        return
+
+    # ── Толкование имени ─────────────────────
+    if step == "name_input":
+        gif_msg = await send_loading_gif(message, t["name_analyzing"])
+        try:
+            user   = await get_or_create_user(uid)
+            prompt = get_name_prompt(user, lang, uid) + text
+            result = await groq_ask(prompt)
+            try:
+                await gif_msg.delete()
+            except Exception:
+                pass
+            await send_long(message, result)
+            await increment_uses(uid)
+            hint = get_name_hint(user, lang, uid)
+            if hint:
+                await message.answer(hint, parse_mode="HTML",
+                                     reply_markup=paywall_kb(lang))
+                user_state[uid].update({"step": "paywall"})
+                return
         except Exception as e:
             logging.error(e)
             await message.answer(t["error"])
