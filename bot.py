@@ -14,6 +14,9 @@ from datetime import datetime, timedelta
 import google.generativeai as genai
 from groq import Groq
 import asyncpg
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+scheduler = AsyncIOScheduler(timezone="Europe/Kiev")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -64,6 +67,10 @@ async def init_db():
                 created_at    TIMESTAMP DEFAULT NOW()
             )
         """)
+        # Новые колонки для ежедневного гороскопа (IF NOT EXISTS — безопасно для существующей БД)
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date TEXT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_time TEXT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_enabled BOOL DEFAULT FALSE")
     logging.info("DB ready")
 
 def gen_ref_code() -> str:
@@ -127,7 +134,44 @@ async def give_ref_bonus(referrer_id: int, days: int):
         )
 
 # ─────────────────────────────────────────────
-# ТЕКСТЫ
+# КОРОТКИЙ ГОРОСКОП ДЛЯ РАССЫЛКИ (Groq)
+# ─────────────────────────────────────────────
+DAILY_HOROSCOPE_PROMPT = {
+    "uk": "Ти — Аарон, астролог. Відповідай ВИКЛЮЧНО УКРАЇНСЬКОЮ. Склади КОРОТКИЙ щоденний гороскоп на {today} для дати народження {birth_date}. Формат (строго):\n🌟 *[Знак зодіаку]*\n⚡ Енергія: [1 речення]\n❤️ Стосунки: [1 речення]\n💼 Робота: [1 речення]\n🔮 Порада дня: [1 речення]\nТільки найголовніше, без зайвих слів.",
+    "ru": "Ты — Аарон, астролог. Отвечай ИСКЛЮЧИТЕЛЬНО НА РУССКОМ. Составь КОРОТКИЙ ежедневный гороскоп на {today} для даты рождения {birth_date}. Формат (строго):\n🌟 *[Знак зодиака]*\n⚡ Энергия: [1 предложение]\n❤️ Отношения: [1 предложение]\n💼 Работа: [1 предложение]\n🔮 Совет дня: [1 предложение]\nТолько самое важное, без воды.",
+    "en": "You are Aaron, astrologer. Reply EXCLUSIVELY IN ENGLISH. Write a SHORT daily horoscope for {today} for birth date {birth_date}. Format (strictly):\n🌟 *[Zodiac sign]*\n⚡ Energy: [1 sentence]\n❤️ Relationships: [1 sentence]\n💼 Work: [1 sentence]\n🔮 Advice: [1 sentence]\nOnly the essentials.",
+    "de": "Du bist Aaron, Astrologe. Antworte AUSSCHLIESSLICH AUF DEUTSCH. Erstelle ein KURZES Tageshoroskop für {today} für Geburtsdatum {birth_date}. Format (strikt):\n🌟 *[Tierkreiszeichen]*\n⚡ Energie: [1 Satz]\n❤️ Beziehungen: [1 Satz]\n💼 Arbeit: [1 Satz]\n🔮 Tagesrat: [1 Satz]\nNur das Wesentliche.",
+}
+
+async def send_daily_horoscopes():
+    """Запускается каждую минуту — рассылает гороскоп тем, у кого сейчас нужное время."""
+    now_time = datetime.now().strftime("%H:%M")
+    today    = datetime.now().strftime("%d.%m.%Y")
+    try:
+        async with db_pool.acquire() as conn:
+            # Премиум подписчики + админы с включёнными уведомлениями
+            rows = await conn.fetch("""
+                SELECT user_id, lang, birth_date, notify_time
+                FROM users
+                WHERE notify_enabled = TRUE
+                  AND notify_time = $1
+                  AND birth_date IS NOT NULL
+                  AND (
+                      (is_subscribed = TRUE AND sub_until > NOW() AND plan = 2)
+                      OR user_id = ANY($2)
+                  )
+            """, now_time, list(ADMIN_IDS))
+        for row in rows:
+            try:
+                lang       = row['lang'] or 'ru'
+                birth_date = row['birth_date']
+                prompt     = DAILY_HOROSCOPE_PROMPT[lang].format(today=today, birth_date=birth_date)
+                result     = await groq_ask_async(prompt)
+                await bot.send_message(row['user_id'], f"🌅 *Ваш гороскоп на сегодня:*\n\n{result}", parse_mode="Markdown")
+            except Exception as e:
+                logging.error(f"Daily horoscope error for {row['user_id']}: {e}")
+    except Exception as e:
+        logging.error(f"Scheduler DB error: {e}")
 # ─────────────────────────────────────────────
 TEXTS = {
     "uk": {
@@ -185,8 +229,9 @@ TEXTS = {
         ),
         "pay_success_premium": (
             "✨ Підписку <b>Преміум</b> активовано на 30 днів!\n\n"
-            "Безліміт гадань + незабаром щоденний гороскоп 🌟\n\n"
-            "👥 Запрошуйте друзів та отримуйте бонусні дні: /ref"
+            "Безліміт гадань + щоденний гороскоп 🌟\n\n"
+            "👥 Запрошуйте друзів та отримуйте бонусні дні: /ref\n"
+            "🌅 Налаштувати щоденний гороскоп: /notify"
         ),
         "ref_link_msg": (
             "🔗 <b>Ваше реферальне посилання:</b>\n{link}\n\n"
@@ -202,6 +247,11 @@ TEXTS = {
         "sub_expired":    "❌ Підписка закінчилась",
         "plan_standard":  "Стандарт",
         "plan_premium":   "Преміум",
+        "notify_no_premium": "⭐ Щоденний гороскоп доступний лише для підписки Преміум.",
+        "notify_ask_date":   "📅 Введіть дату народження для гороскопу:\n\nПриклад: 15.03.1990",
+        "notify_ask_time":   "⏰ О котрій годині надсилати гороскоп?\n\nПриклад: 09:00\n(час київський, формат ГГ:ХХ)",
+        "notify_saved":      "✅ Готово! Щоденний гороскоп приходитиме о {time} 🌟\n\nЗмінити час: /notify",
+        "notify_bad_time":   "❌ Невірний формат. Введіть час як 09:00",
     },
     "ru": {
         "welcome": (
@@ -258,8 +308,9 @@ TEXTS = {
         ),
         "pay_success_premium": (
             "✨ Подписка <b>Премиум</b> активирована на 30 дней!\n\n"
-            "Безлимит гаданий + скоро ежедневный гороскоп 🌟\n\n"
-            "👥 Приглашайте друзей и получайте бонусные дни: /ref"
+            "Безлимит гаданий + ежедневный гороскоп 🌟\n\n"
+            "👥 Приглашайте друзей и получайте бонусные дни: /ref\n"
+            "🌅 Настроить ежедневный гороскоп: /notify"
         ),
         "ref_link_msg": (
             "🔗 <b>Ваша реферальная ссылка:</b>\n{link}\n\n"
@@ -275,6 +326,11 @@ TEXTS = {
         "sub_expired":    "❌ Подписка закончилась",
         "plan_standard":  "Стандарт",
         "plan_premium":   "Премиум",
+        "notify_no_premium": "⭐ Ежедневный гороскоп доступен только для подписки Премиум.",
+        "notify_ask_date":   "📅 Введите дату рождения для гороскопа:\n\nПример: 15.03.1990",
+        "notify_ask_time":   "⏰ В какое время присылать гороскоп?\n\nПример: 09:00\n(время киевское, формат ЧЧ:ММ)",
+        "notify_saved":      "✅ Готово! Ежедневный гороскоп будет приходить в {time} 🌟\n\nИзменить время: /notify",
+        "notify_bad_time":   "❌ Неверный формат. Введите время как 09:00",
     },
     "en": {
         "welcome": (
@@ -331,8 +387,9 @@ TEXTS = {
         ),
         "pay_success_premium": (
             "✨ <b>Premium</b> subscription activated for 30 days!\n\n"
-            "Unlimited readings + daily horoscope coming soon 🌟\n\n"
-            "👥 Invite friends and earn bonus days: /ref"
+            "Unlimited readings + daily horoscope 🌟\n\n"
+            "👥 Invite friends and earn bonus days: /ref\n"
+            "🌅 Set up daily horoscope: /notify"
         ),
         "ref_link_msg": (
             "🔗 <b>Your referral link:</b>\n{link}\n\n"
@@ -348,6 +405,11 @@ TEXTS = {
         "sub_expired":    "❌ Subscription has expired",
         "plan_standard":  "Standard",
         "plan_premium":   "Premium",
+        "notify_no_premium": "⭐ Daily horoscope is available for Premium subscribers only.",
+        "notify_ask_date":   "📅 Enter your birth date for the horoscope:\n\nExample: 15.03.1990",
+        "notify_ask_time":   "⏰ What time should I send your horoscope?\n\nExample: 09:00\n(Kyiv time, format HH:MM)",
+        "notify_saved":      "✅ Done! Daily horoscope will arrive at {time} 🌟\n\nChange time: /notify",
+        "notify_bad_time":   "❌ Wrong format. Enter time like 09:00",
     },
     "de": {
         "welcome": (
@@ -404,8 +466,9 @@ TEXTS = {
         ),
         "pay_success_premium": (
             "✨ <b>Premium</b>-Abo für 30 Tage aktiviert!\n\n"
-            "Unbegrenzte Lesungen + tägliches Horoskop kommt bald 🌟\n\n"
-            "👥 Laden Sie Freunde ein und verdienen Sie Bonustage: /ref"
+            "Unbegrenzte Lesungen + tägliches Horoskop 🌟\n\n"
+            "👥 Laden Sie Freunde ein und verdienen Sie Bonustage: /ref\n"
+            "🌅 Tägliches Horoskop einrichten: /notify"
         ),
         "ref_link_msg": (
             "🔗 <b>Ihr Empfehlungslink:</b>\n{link}\n\n"
@@ -421,6 +484,11 @@ TEXTS = {
         "sub_expired":    "❌ Abonnement abgelaufen",
         "plan_standard":  "Standard",
         "plan_premium":   "Premium",
+        "notify_no_premium": "⭐ Das tägliche Horoskop ist nur für Premium-Abonnenten verfügbar.",
+        "notify_ask_date":   "📅 Geben Sie Ihr Geburtsdatum für das Horoskop ein:\n\nBeispiel: 15.03.1990",
+        "notify_ask_time":   "⏰ Um wie viel Uhr soll ich das Horoskop senden?\n\nBeispiel: 09:00\n(Kyiver Zeit, Format HH:MM)",
+        "notify_saved":      "✅ Fertig! Das tägliche Horoskop kommt um {time} 🌟\n\nZeit ändern: /notify",
+        "notify_bad_time":   "❌ Falsches Format. Geben Sie die Zeit wie 09:00 ein",
     },
 }
 
@@ -700,6 +768,29 @@ async def cmd_start(message: Message):
     )
 
 # ─────────────────────────────────────────────
+# /notify  — настройка ежедневного гороскопа
+# ─────────────────────────────────────────────
+@dp.message(Command("notify"))
+async def cmd_notify(message: Message):
+    uid  = message.from_user.id
+    lang = get_state(uid).get("lang", "ru")
+    t    = TEXTS[lang]
+    user = await get_or_create_user(uid)
+    now  = datetime.now()
+
+    # Проверяем: Премиум или админ
+    is_premium = (
+        user['is_subscribed'] and user['sub_until'] and
+        user['sub_until'] > now and (user['plan'] or 0) == 2
+    )
+    if uid not in ADMIN_IDS and not is_premium:
+        await message.answer(t["notify_no_premium"])
+        return
+
+    user_state[uid].update({"step": "notify_date"})
+    await message.answer(t["notify_ask_date"], reply_markup=back_kb(lang))
+
+# ─────────────────────────────────────────────
 # /ref  — реферальная ссылка
 # ─────────────────────────────────────────────
 @dp.message(Command("ref"))
@@ -974,6 +1065,29 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
+    # ── Настройка уведомлений — дата рождения ─
+    if step == "notify_date":
+        user_state[uid].update({"step": "notify_time", "notify_birth": text})
+        await message.answer(t["notify_ask_time"])
+        return
+
+    # ── Настройка уведомлений — время ──────────
+    if step == "notify_time":
+        import re
+        if not re.match(r"^\d{2}:\d{2}$", text):
+            await message.answer(t["notify_bad_time"])
+            return
+        birth_date = state.get("notify_birth", "")
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET birth_date=$1, notify_time=$2, notify_enabled=TRUE WHERE user_id=$3",
+                birth_date, text, uid
+            )
+        user_state[uid].update({"step": "menu"})
+        await message.answer(t["notify_saved"].format(time=text))
+        await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
+        return
+
     await message.answer(t["unexpected"], reply_markup=menu_kb(lang))
 
 
@@ -1057,6 +1171,8 @@ async def handle_photo(message: Message):
 # ─────────────────────────────────────────────
 async def main():
     await init_db()
+    scheduler.add_job(send_daily_horoscopes, "cron", minute="*")
+    scheduler.start()
     print("🔮 Бот запущен...")
     await dp.start_polling(bot)
 
