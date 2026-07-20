@@ -16,13 +16,11 @@ from prompts import (
     NAME_PROMPT_FREE, NAME_PROMPT_STANDARD, NAME_PROMPT_PREMIUM
 )
 from utils import send_long, send_loading_gif, groq_ask
-from state import user_state
+from state import user_state, get_state
 
 router = Router()
 
 
-def get_state(uid):
-    return user_state.get(uid, {"lang": "ru", "step": "lang"})
 
 
 async def check_access(message: Message, uid: int, lang: str) -> bool:

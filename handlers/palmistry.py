@@ -12,7 +12,7 @@ from texts import TEXTS
 from keyboards import menu_kb, back_kb
 from prompts import PALM_SYSTEM, PALM_PROMPTS
 from utils import send_long, send_loading_gif
-from state import user_state
+from state import user_state, get_state
 
 router = Router()
 
@@ -20,8 +20,6 @@ genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
 
-def get_state(uid):
-    return user_state.get(uid, {"lang": "ru", "step": "menu"})
 
 
 @router.message(F.photo)

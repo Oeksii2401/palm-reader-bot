@@ -8,7 +8,7 @@ from config import ADMIN_IDS, FREE_LIMIT, REF_DAYS_L1, REF_DAYS_L2, AARON_PHOTO_
 from database import db_pool, get_or_create_user, save_lang
 from texts import TEXTS
 from keyboards import lang_kb, menu_kb, back_kb
-from state import user_state
+from state import user_state, get_state
 
 router = Router()
 
@@ -20,7 +20,6 @@ async def cmd_start(message: Message):
 
     await get_or_create_user(uid)
 
-    # Реферальный код: /start ref_XXXXXXXX
     if len(args) > 1 and args[1].startswith("ref_"):
         ref_code = args[1][4:]
         async with db_pool.acquire() as conn:
@@ -52,11 +51,12 @@ async def cmd_start(message: Message):
 
 @router.message(Command("notify"))
 async def cmd_notify(message: Message):
-    uid  = message.from_user.id
-    lang = user_state.get(uid, {}).get("lang", "ru")
-    t    = TEXTS[lang]
-    user = await get_or_create_user(uid)
-    now  = datetime.now()
+    uid   = message.from_user.id
+    state = get_state(uid)
+    lang  = state.get("lang", "ru")
+    t     = TEXTS[lang]
+    user  = await get_or_create_user(uid)
+    now   = datetime.now()
 
     is_premium = (
         user['is_subscribed'] and user['sub_until'] and
@@ -66,21 +66,20 @@ async def cmd_notify(message: Message):
         await message.answer(t["notify_no_premium"])
         return
 
-    user_state[uid].update({"step": "notify_date"})
+    state.update({"step": "notify_date"})
     await message.answer(t["notify_ask_date"], reply_markup=back_kb(lang))
 
 
 @router.message(Command("ref"))
 async def cmd_ref(message: Message):
-    from aiogram import Bot
-    import os
-    uid  = message.from_user.id
-    lang = user_state.get(uid, {}).get("lang", "ru")
-    t    = TEXTS[lang]
-    user = await get_or_create_user(uid)
-    bot  = message.bot
-    info = await bot.get_me()
-    link = f"https://t.me/{info.username}?start=ref_{user['ref_code']}"
+    uid   = message.from_user.id
+    state = get_state(uid)
+    lang  = state.get("lang", "ru")
+    t     = TEXTS[lang]
+    user  = await get_or_create_user(uid)
+    bot   = message.bot
+    info  = await bot.get_me()
+    link  = f"https://t.me/{info.username}?start=ref_{user['ref_code']}"
     await message.answer(
         t["ref_link_msg"].format(link=link, l1=REF_DAYS_L1, l2=REF_DAYS_L2),
         parse_mode="HTML"
@@ -89,11 +88,12 @@ async def cmd_ref(message: Message):
 
 @router.message(Command("sub"))
 async def cmd_sub(message: Message):
-    uid  = message.from_user.id
-    lang = user_state.get(uid, {}).get("lang", "ru")
-    t    = TEXTS[lang]
-    user = await get_or_create_user(uid)
-    now  = datetime.now()
+    uid   = message.from_user.id
+    state = get_state(uid)
+    lang  = state.get("lang", "ru")
+    t     = TEXTS[lang]
+    user  = await get_or_create_user(uid)
+    now   = datetime.now()
 
     if user['is_subscribed'] and user['sub_until'] and user['sub_until'] > now:
         plan_name = t['plan_premium'] if (user['plan'] or 0) == 2 else t['plan_standard']

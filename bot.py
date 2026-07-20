@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -17,12 +18,14 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp  = Dispatcher()
 
-scheduler = AsyncIOScheduler(timezone="Europe/Kiev")
+KYIV_TZ = ZoneInfo("Europe/Kiev")
+scheduler = AsyncIOScheduler(timezone=KYIV_TZ)
 
 
 async def send_daily_horoscopes():
-    now_time = datetime.now().strftime("%H:%M")
-    today    = datetime.now().strftime("%d.%m.%Y")
+    now_kyiv = datetime.now(KYIV_TZ)
+    now_time = now_kyiv.strftime("%H:%M")
+    today    = now_kyiv.strftime("%d.%m.%Y")
     try:
         rows = await get_premium_notify_users(now_time)
         for row in rows:
