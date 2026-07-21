@@ -25,19 +25,29 @@ async def init_db():
                 created_at    TIMESTAMP DEFAULT NOW()
             )
         """)
-        # Показ пользователю / общие поля
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_time TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_enabled BOOL DEFAULT FALSE")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan INT DEFAULT 0")
 
-        # Структурированные данные рождения — нужны для точных расчётов FreeAstroAPI
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_year INT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_month INT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_day INT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_hour INT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_minute INT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_city TEXT")
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS crypto_invoices (
+                invoice_id  BIGINT PRIMARY KEY,
+                user_id     BIGINT NOT NULL,
+                plan        TEXT   NOT NULL,
+                amount      TEXT,
+                asset       TEXT,
+                status      TEXT   DEFAULT 'pending',
+                created_at  TIMESTAMP DEFAULT NOW()
+            )
+        """)
     logging.info("DB ready")
 
 
@@ -119,11 +129,6 @@ async def save_notify_settings(
     birth_city: str,
     notify_time: str,
 ):
-    """
-    Сохраняет полный набор данных для ежедневного персонального гороскопа
-    (структурированные поля — для FreeAstroAPI, birth_date — для показа юзеру)
-    и включает рассылку.
-    """
     async with db_pool.acquire() as conn:
         await conn.execute(
             """
@@ -140,10 +145,6 @@ async def save_notify_settings(
 
 
 async def get_premium_notify_users(now_time: str) -> list:
-    """
-    Возвращает Premium-подписчиков (+ админов) с включённой рассылкой,
-    у кого сейчас наступило выбранное время доставки и есть полные данные рождения.
-    """
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT user_id, lang, notify_time,
@@ -162,3 +163,52 @@ async def get_premium_notify_users(now_time: str) -> list:
               )
         """, now_time, list(ADMIN_IDS))
     return rows
+
+
+async def create_crypto_invoice(invoice_id: int, user_id: int, plan: str, amount: str, asset: str):
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO crypto_invoices (invoice_id, user_id, plan, amount, asset, status)
+            VALUES ($1, $2, $3, $4, $5, 'pending')
+            ON CONFLICT (invoice_id) DO NOTHING
+            """,
+            invoice_id, user_id, plan, amount, asset
+        )
+
+
+async def get_pending_crypto_invoices() -> list:
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT invoice_id, user_id, plan FROM crypto_invoices WHERE status='pending'"
+        )
+    return rows
+
+
+async def mark_crypto_invoice_status(invoice_id: int, status: str):
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE crypto_invoices SET status=$1 WHERE invoice_id=$2",
+            status, invoice_id
+        )
+
+
+async def get_crypto_invoice(invoice_id: int) -> dict | None:
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM crypto_invoices WHERE invoice_id=$1", invoice_id
+        )
+    return dict(row) if row else None
+
+
+async def get_latest_pending_invoice(user_id: int) -> dict | None:
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT * FROM crypto_invoices
+            WHERE user_id=$1 AND status='pending'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            user_id
+        )
+    return dict(row) if row else None
