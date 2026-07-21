@@ -5,7 +5,7 @@ from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardRemove, LabeledPrice
 
 from config import ADMIN_IDS, STANDARD_STARS, PREMIUM_STARS
-from database import get_or_create_user, save_lang, can_use, increment_uses, save_notify_settings
+from database import get_or_create_user, save_lang, can_use, increment_uses, save_notify_settings, log_reading
 from texts import TEXTS
 from keyboards import (
     lang_kb, menu_kb, hand_kb, back_kb, paywall_kb,
@@ -216,6 +216,7 @@ async def handle_text(message: Message):
                 pass
             await send_long(message, result)
             await increment_uses(uid)
+            await log_reading(uid, "numerology")
         except Exception as e:
             logging.error(e)
             await message.answer(t["error"])
@@ -236,6 +237,7 @@ async def handle_text(message: Message):
                 pass
             await send_long(message, result)
             await increment_uses(uid)
+            await log_reading(uid, "natal")
         except Exception as e:
             logging.error(e)
             await message.answer(t["error"])
@@ -266,6 +268,7 @@ async def handle_text(message: Message):
                 pass
             await send_long(message, result)
             await increment_uses(uid)
+            await log_reading(uid, "compatibility")
         except Exception as e:
             logging.error(e)
             await message.answer(t["error"])
@@ -287,6 +290,7 @@ async def handle_text(message: Message):
                 pass
             await send_long(message, result)
             await increment_uses(uid)
+            await log_reading(uid, "horoscope")
         except Exception as e:
             logging.error(e)
             await message.answer(t["error"])
@@ -307,6 +311,7 @@ async def handle_text(message: Message):
                 pass
             await send_long(message, result)
             await increment_uses(uid)
+            await log_reading(uid, "name")
             hint = get_name_hint(user, lang, uid)
             if hint:
                 await message.answer(hint, parse_mode="HTML",

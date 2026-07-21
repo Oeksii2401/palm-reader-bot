@@ -7,12 +7,12 @@ from aiogram import Router, F
 from aiogram.types import Message
 
 from config import GEMINI_API_KEY
-from database import increment_uses
+from database import increment_uses, log_reading
 from texts import TEXTS
 from keyboards import menu_kb, back_kb
 from prompts import PALM_SYSTEM, PALM_PROMPTS
 from utils import send_long, send_loading_gif
-from state import user_state, get_state
+from state import user_state
 
 router = Router()
 
@@ -20,6 +20,8 @@ genai.configure(api_key=GEMINI_API_KEY)
 gemini_model = genai.GenerativeModel('gemini-2.5-flash')
 
 
+def get_state(uid):
+    return user_state.get(uid, {"lang": "ru", "step": "menu"})
 
 
 @router.message(F.photo)
@@ -66,6 +68,7 @@ async def handle_photo(message: Message):
                 pass
             await send_long(message, resp.text)
             await increment_uses(uid)
+            await log_reading(uid, "palm")
         except Exception as e:
             logging.error(e)
             await message.answer(t["palm_error"])
@@ -88,6 +91,7 @@ async def handle_photo(message: Message):
             pass
         await send_long(message, resp.text)
         await increment_uses(uid)
+        await log_reading(uid, "palm")
     except Exception as e:
         logging.error(e)
         await message.answer(t["palm_error"])

@@ -2,9 +2,9 @@ import logging
 from aiogram import Router, F
 from aiogram.types import Message, PreCheckoutQuery
 
-from config import CRYPTO_ASSET, CRYPTO_STANDARD_PRICE, CRYPTO_PREMIUM_PRICE
+from config import CRYPTO_ASSET, CRYPTO_STANDARD_PRICE, CRYPTO_PREMIUM_PRICE, STANDARD_STARS, PREMIUM_STARS
 from database import (
-    get_or_create_user, activate_subscription, give_ref_bonus,
+    get_or_create_user, activate_subscription, give_ref_bonus, log_payment,
     create_crypto_invoice, get_latest_pending_invoice, mark_crypto_invoice_status,
 )
 from texts import TEXTS
@@ -18,7 +18,7 @@ import crypto_pay
 router = Router()
 
 
-async def apply_subscription_payment(bot, uid: int, plan: int, lang: str):
+async def apply_subscription_payment(bot, uid: int, plan: int, lang: str, currency: str = "stars", amount: str = ""):
     """
     Общая логика активации подписки после ЛЮБОЙ успешной оплаты
     (Stars или крипта): начисление подписки, реферальные бонусы,
@@ -26,6 +26,7 @@ async def apply_subscription_payment(bot, uid: int, plan: int, lang: str):
     """
     t = TEXTS[lang]
     await activate_subscription(uid, plan)
+    await log_payment(uid, plan, currency, amount)
 
     user = await get_or_create_user(uid)
     if user.get('referred_by'):
@@ -71,7 +72,8 @@ async def successful_payment_handler(message: Message):
     lang    = user_state.get(uid, {}).get("lang", "ru")
 
     plan = 1 if payload == "standard" else 2
-    await apply_subscription_payment(message.bot, uid, plan, lang)
+    stars_amount = str(PREMIUM_STARS if plan == 2 else STANDARD_STARS)
+    await apply_subscription_payment(message.bot, uid, plan, lang, currency="stars", amount=stars_amount)
 
 
 # ── Оплата криптой: выбор плана → создание инвойса ───────────────
@@ -122,6 +124,7 @@ async def crypto_check_payment(message: Message):
 
     invoice_id = state.get("pending_invoice_id")
     if not invoice_id:
+        # Состояние могло обнулиться после рестарта бота — ищем в базе
         invoice = await get_latest_pending_invoice(uid)
         if not invoice:
             await message.answer(t["crypto_error"])
@@ -134,8 +137,9 @@ async def crypto_check_payment(message: Message):
         invoice = await get_latest_pending_invoice(uid)
         plan_str = invoice["plan"] if invoice else state.get("pending_plan", "standard")
         plan = 2 if plan_str == "premium" else 1
+        crypto_amount = invoice["amount"] if invoice else ""
         await mark_crypto_invoice_status(invoice_id, "paid")
-        await apply_subscription_payment(message.bot, uid, plan, lang)
+        await apply_subscription_payment(message.bot, uid, plan, lang, currency="usdt", amount=crypto_amount)
         return
 
     if status == "expired":
@@ -145,4 +149,5 @@ async def crypto_check_payment(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
+    # active / None — платёж ещё не пришёл
     await message.answer(t["crypto_still_pending"])

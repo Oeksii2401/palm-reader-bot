@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from config import ADMIN_IDS, FREE_LIMIT, REF_DAYS_L1, REF_DAYS_L2, AARON_PHOTO_URL
-from database import db_pool, get_or_create_user, save_lang
+from database import db_pool, get_or_create_user, save_lang, log_visit
 from texts import TEXTS
 from keyboards import lang_kb, menu_kb, back_kb
 from state import user_state, get_state
@@ -19,7 +19,9 @@ async def cmd_start(message: Message):
     args = message.text.split()
 
     await get_or_create_user(uid)
+    await log_visit(uid)
 
+    # Реферальный код: /start ref_XXXXXXXX
     if len(args) > 1 and args[1].startswith("ref_"):
         ref_code = args[1][4:]
         async with db_pool.acquire() as conn:
@@ -66,7 +68,7 @@ async def cmd_notify(message: Message):
     now   = datetime.now()
 
     state = get_state(uid)
-    state["lang"] = lang  # синхронизируем сессию с реальным языком из БД
+    state["lang"] = lang
 
     is_premium = (
         user['is_subscribed'] and user['sub_until'] and

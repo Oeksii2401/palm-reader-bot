@@ -16,7 +16,7 @@ from prompts import DAILY_HOROSCOPE_PROMPT, DAILY_HOROSCOPE_FALLBACK_PROMPT
 from astro import get_daily_personal_horoscope, format_astro_facts
 import crypto_pay
 
-from handlers import start, payments, readings, palmistry
+from handlers import start, payments, readings, palmistry, admin
 from handlers.payments import apply_subscription_payment
 
 logging.basicConfig(level=logging.INFO)
@@ -103,7 +103,10 @@ async def check_pending_crypto_payments():
                     user = await get_or_create_user(row['user_id'])
                     lang = user.get('lang') or 'ru'
                     plan = 2 if row['plan'] == 'premium' else 1
-                    await apply_subscription_payment(bot, row['user_id'], plan, lang)
+                    await apply_subscription_payment(
+                        bot, row['user_id'], plan, lang,
+                        currency="usdt", amount=row.get('amount', '')
+                    )
                 elif status == "expired":
                     await mark_crypto_invoice_status(row['invoice_id'], "expired")
             except Exception as e:
@@ -115,6 +118,7 @@ async def check_pending_crypto_payments():
 async def main():
     await init_db()
 
+    dp.include_router(admin.router)
     dp.include_router(start.router)
     dp.include_router(payments.router)
     dp.include_router(palmistry.router)
