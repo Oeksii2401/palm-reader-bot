@@ -49,14 +49,24 @@ async def cmd_start(message: Message):
     )
 
 
+@router.message(Command("lang"))
+async def cmd_lang(message: Message):
+    """Явная смена языка в любой момент — не ждём полного /start."""
+    uid = message.from_user.id
+    user_state[uid] = {"step": "lang"}
+    await message.answer("🔮 Оберіть мову / Выберите язык / Choose language / Sprache wählen:", reply_markup=lang_kb())
+
+
 @router.message(Command("notify"))
 async def cmd_notify(message: Message):
     uid   = message.from_user.id
-    state = get_state(uid)
-    lang  = state.get("lang", "ru")
-    t     = TEXTS[lang]
     user  = await get_or_create_user(uid)
+    lang  = user['lang'] if user.get('lang') in TEXTS else 'ru'
+    t     = TEXTS[lang]
     now   = datetime.now()
+
+    state = get_state(uid)
+    state["lang"] = lang  # синхронизируем сессию с реальным языком из БД
 
     is_premium = (
         user['is_subscribed'] and user['sub_until'] and
@@ -73,13 +83,16 @@ async def cmd_notify(message: Message):
 @router.message(Command("ref"))
 async def cmd_ref(message: Message):
     uid   = message.from_user.id
-    state = get_state(uid)
-    lang  = state.get("lang", "ru")
-    t     = TEXTS[lang]
     user  = await get_or_create_user(uid)
-    bot   = message.bot
-    info  = await bot.get_me()
-    link  = f"https://t.me/{info.username}?start=ref_{user['ref_code']}"
+    lang  = user['lang'] if user.get('lang') in TEXTS else 'ru'
+    t     = TEXTS[lang]
+
+    state = get_state(uid)
+    state["lang"] = lang
+
+    bot  = message.bot
+    info = await bot.get_me()
+    link = f"https://t.me/{info.username}?start=ref_{user['ref_code']}"
     await message.answer(
         t["ref_link_msg"].format(link=link, l1=REF_DAYS_L1, l2=REF_DAYS_L2),
         parse_mode="HTML"
@@ -89,11 +102,13 @@ async def cmd_ref(message: Message):
 @router.message(Command("sub"))
 async def cmd_sub(message: Message):
     uid   = message.from_user.id
-    state = get_state(uid)
-    lang  = state.get("lang", "ru")
-    t     = TEXTS[lang]
     user  = await get_or_create_user(uid)
+    lang  = user['lang'] if user.get('lang') in TEXTS else 'ru'
+    t     = TEXTS[lang]
     now   = datetime.now()
+
+    state = get_state(uid)
+    state["lang"] = lang
 
     if user['is_subscribed'] and user['sub_until'] and user['sub_until'] > now:
         plan_name = t['plan_premium'] if (user['plan'] or 0) == 2 else t['plan_standard']
