@@ -5,7 +5,7 @@ from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardRemove, LabeledPrice
 
 from config import ADMIN_IDS, STANDARD_STARS, PREMIUM_STARS
-from database import get_or_create_user, save_lang, can_use, increment_uses
+from database import get_or_create_user, save_lang, can_use, increment_uses, save_notify_settings
 from texts import TEXTS
 from keyboards import (
     lang_kb, menu_kb, hand_kb, back_kb, paywall_kb,
@@ -20,7 +20,14 @@ from state import user_state, get_state
 
 router = Router()
 
-
+# Ошибка формата даты рождения — маленький словарь тут же,
+# чтобы не трогать весь texts.py ради одной строки.
+DATE_FORMAT_ERROR = {
+    "uk": "❌ Невірний формат. Введіть дату як 15.03.1990",
+    "ru": "❌ Неверный формат. Введите дату как 15.03.1990",
+    "en": "❌ Wrong format. Enter date like 15.03.1990",
+    "de": "❌ Falsches Format. Geben Sie das Datum wie 15.03.1990 ein",
+}
 
 
 async def check_access(message: Message, uid: int, lang: str) -> bool:
@@ -313,24 +320,68 @@ async def handle_text(message: Message):
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))
         return
 
-    # ── Настройка уведомлений — дата рождения ─
+    # ── Настройка уведомлений: шаг 1 — дата рождения ─
     if step == "notify_date":
-        user_state[uid].update({"step": "notify_time", "notify_birth": text})
+        m = re.match(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$", text)
+        if not m:
+            await message.answer(DATE_FORMAT_ERROR.get(lang, DATE_FORMAT_ERROR["ru"]))
+            return
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if not (1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= datetime.now().year):
+            await message.answer(DATE_FORMAT_ERROR.get(lang, DATE_FORMAT_ERROR["ru"]))
+            return
+        user_state[uid].update({
+            "step": "notify_birth_time",
+            "notify_birth_date": text,
+            "notify_birth_year": year,
+            "notify_birth_month": month,
+            "notify_birth_day": day,
+        })
+        await message.answer(t["notify_ask_birth_time"])
+        return
+
+    # ── Настройка уведомлений: шаг 2 — время рождения ─
+    if step == "notify_birth_time":
+        m = re.match(r"^(\d{1,2}):(\d{2})$", text)
+        if not m or not (0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59):
+            await message.answer(t["notify_bad_time"])
+            return
+        user_state[uid].update({
+            "step": "notify_city",
+            "notify_birth_hour": int(m.group(1)),
+            "notify_birth_minute": int(m.group(2)),
+        })
+        await message.answer(t["notify_ask_city"])
+        return
+
+    # ── Настройка уведомлений: шаг 3 — город рождения ─
+    if step == "notify_city":
+        if len(text) < 2:
+            await message.answer(t["notify_ask_city"])
+            return
+        user_state[uid].update({
+            "step": "notify_time",
+            "notify_birth_city": text,
+        })
         await message.answer(t["notify_ask_time"])
         return
 
-    # ── Настройка уведомлений — время ──────────
+    # ── Настройка уведомлений: шаг 4 — время доставки ─
     if step == "notify_time":
-        from database import db_pool
         if not re.match(r"^\d{2}:\d{2}$", text):
             await message.answer(t["notify_bad_time"])
             return
-        birth_date = state.get("notify_birth", "")
-        async with db_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET birth_date=$1, notify_time=$2, notify_enabled=TRUE WHERE user_id=$3",
-                birth_date, text, uid
-            )
+        await save_notify_settings(
+            uid,
+            birth_date=state.get("notify_birth_date", ""),
+            birth_year=state.get("notify_birth_year"),
+            birth_month=state.get("notify_birth_month"),
+            birth_day=state.get("notify_birth_day"),
+            birth_hour=state.get("notify_birth_hour"),
+            birth_minute=state.get("notify_birth_minute"),
+            birth_city=state.get("notify_birth_city", ""),
+            notify_time=text,
+        )
         user_state[uid].update({"step": "menu"})
         await message.answer(t["notify_saved"].format(time=text))
         await message.answer(t["choose_menu"], reply_markup=menu_kb(lang))

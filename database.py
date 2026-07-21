@@ -25,10 +25,19 @@ async def init_db():
                 created_at    TIMESTAMP DEFAULT NOW()
             )
         """)
+        # Показ пользователю / общие поля
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_time TEXT")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_enabled BOOL DEFAULT FALSE")
         await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan INT DEFAULT 0")
+
+        # Структурированные данные рождения — нужны для точных расчётов FreeAstroAPI
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_year INT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_month INT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_day INT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_hour INT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_minute INT")
+        await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_city TEXT")
     logging.info("DB ready")
 
 
@@ -99,14 +108,54 @@ async def give_ref_bonus(referrer_id: int, days: int):
         )
 
 
+async def save_notify_settings(
+    user_id: int,
+    birth_date: str,
+    birth_year: int,
+    birth_month: int,
+    birth_day: int,
+    birth_hour: int,
+    birth_minute: int,
+    birth_city: str,
+    notify_time: str,
+):
+    """
+    Сохраняет полный набор данных для ежедневного персонального гороскопа
+    (структурированные поля — для FreeAstroAPI, birth_date — для показа юзеру)
+    и включает рассылку.
+    """
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE users
+            SET birth_date=$1, birth_year=$2, birth_month=$3, birth_day=$4,
+                birth_hour=$5, birth_minute=$6, birth_city=$7,
+                notify_time=$8, notify_enabled=TRUE
+            WHERE user_id=$9
+            """,
+            birth_date, birth_year, birth_month, birth_day,
+            birth_hour, birth_minute, birth_city,
+            notify_time, user_id
+        )
+
+
 async def get_premium_notify_users(now_time: str) -> list:
+    """
+    Возвращает Premium-подписчиков (+ админов) с включённой рассылкой,
+    у кого сейчас наступило выбранное время доставки и есть полные данные рождения.
+    """
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT user_id, lang, birth_date, notify_time
+            SELECT user_id, lang, notify_time,
+                   birth_year, birth_month, birth_day,
+                   birth_hour, birth_minute, birth_city
             FROM users
             WHERE notify_enabled = TRUE
               AND notify_time = $1
-              AND birth_date IS NOT NULL
+              AND birth_year IS NOT NULL
+              AND birth_month IS NOT NULL
+              AND birth_day IS NOT NULL
+              AND birth_city IS NOT NULL
               AND (
                   (is_subscribed = TRUE AND sub_until > NOW() AND plan = 2)
                   OR user_id = ANY($2)
