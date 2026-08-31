@@ -16,7 +16,7 @@ CRYPTO_STANDARD_PRICE = "5.99"
 CRYPTO_PREMIUM_PRICE  = "9.99"
 REF_DAYS_L1    = 30
 REF_DAYS_L2    = 10
-GROQ_MODEL     = "llama-3.3-70b-versatile"
+GROQ_MODEL     = "openai/gpt-oss-120b"
 
 FREE_ASTRO_BASE_URL = "https://api.freeastroapi.com"
 CRYPTO_PAY_BASE_URL = "https://pay.crypt.bot"
