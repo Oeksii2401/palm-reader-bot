@@ -4,3 +4,4 @@ asyncpg
 groq
 apscheduler
 requests
+tzdata
